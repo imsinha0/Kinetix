@@ -1,0 +1,80 @@
+defaults:
+  - env: entity
+  - learning:
+    - ppo-base
+    - ppo-rnn
+  - misc: misc
+  - model:
+    - model-base
+    - model-transformer
+    - model-perm-invariant-mlp
+  - _self_
+
+env:
+  # The Banyan reward is sparse; prepare_banyan_level forces
+  # dense_reward_scale=0 in the actual env params (asserted in the trainer).
+  dense_reward_scale: 0.0
+
+misc:
+  wandb_project: kinetix-banyan
+  wandb_entity: imsinha-harvard-university
+  save_path: null
+  save_policy: false
+  video_frequency: 10
+
+# --- Banyan task banks (built once via banyan-grid's build_d1_d2_task_banks) ---
+d1_num_instances: 1
+d2_num_instances: 1000
+id_vocab_size: 120
+task_seed: 123
+object_condition: shared
+
+# --- Level v2 (anti-bulldozer lip + horizon) ---
+# lip_height: fixated wall on the platform's left edge; objects must be
+# lifted over it (constant-torque sweep solved 78% without it).
+# max_timesteps: HORIZON DEVIATION from the stock 256 — the lipped
+# two-delivery chain does not fit 256 steps (gate: depth-2 0% at 256,
+# solvable at 512). null_policy_floor: measured worst constant-policy
+# success at this lip+horizon (kinetix_banyan.lip_tune), for figure floor lines.
+lip_height: 0.55
+# Round-1 training lip (curriculum): set lower/0 to give exploration an
+# on-ramp; round 2 and ALL evals always use lip_height. Default: no curriculum.
+lip_height_round1: 0.55
+max_timesteps: 512
+null_policy_floor: -1.0
+
+# --- First-time event shaping (user-approved deviation from pure sparse) ---
+# One-time, non-terminal bonuses per required object per episode: lifted
+# above the lip's top, and first entry into the combine zone. Root success /
+# dead-end remain +1/-1 terminal. Identical values at every |O| point.
+# Rationale: the lipped level removed the exploration on-ramp — sparse PPO
+# never lands a single object in the zone in 50M steps (run ox3clneh).
+reward_first_lift: 0.1
+reward_first_deposit: 0.2
+# Local path to a stock-grasp pretraining checkpoint (full_model.pbz2 from
+# their ppo.py). Params are shape-adapted (zero-pad for the +32 type-code
+# circle columns — function-preserving). Same checkpoint for every |O| run.
+pretrained_checkpoint: null
+# Dense height-progress potential (per metre of NEW max height of a required
+# object, clipped at the lip top; monotone -> bounded ~0.3/object). Added
+# after run 5rvnh5u0 showed exploration never produces even one lift.
+reward_height_scale: 0.4
+
+# --- Two-round continual protocol (learning.total_timesteps is derived) ---
+total_timesteps_d1: 50000000
+total_timesteps_d2: 50000000
+
+# --- Banyan eval: N fixed episodes per (bank x depth) ---
+eval_freq: 64
+eval_temperature: 0.0001
+eval_num_episodes_periodic: 128
+eval_num_episodes_full: 512
+eval_num_video_episodes: 4
+
+# Keys expected by normalise_config; env/static params actually come from
+# prepare_banyan_level, not from an env_size preset.
+env_size_name: banyan
+env_size_type: custom
+eval_levels: []
+
+seed: 0
