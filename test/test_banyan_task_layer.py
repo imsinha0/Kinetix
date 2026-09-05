@@ -529,3 +529,35 @@ def test_wrong_deposit_penalty_depth1(setup):
     # goal alone: exactly +1
     _o, _s, r4, d4, _i = env_pen.step(jax.random.PRNGKey(1), _place_in_zone(state, {right: center}), _zero_action(env_pen), ep)
     assert abs(float(r4) - 1.0) < 1e-5 and bool(d4)
+
+
+def test_goal_distance_shaping_is_potential_based(setup):
+    env_d = make_banyan_env(
+        base_state=setup["base"], static_env_params=setup["static"], env_params=setup["env_params"],
+        constants=setup["constants"], reset_fn=setup["reset_fn"], action_type="continuous",
+        reward_goal_distance_scale=1.0,
+    )
+    ep = setup["env_params"]
+    state = _fresh_depth_state(setup, 1)
+    goal_slot = [s for s in OBJECT_SLOTS if int(np.asarray(state.circle_types)[s]) == int(_sc(state.goal_token))][0]
+    zc = _zone_center(setup["constants"])
+    # first step: last_distance == -1 -> no shaping reward
+    _o, st, r0, d0, info0 = env_d.step(jax.random.PRNGKey(1), state, _zero_action(env_d), ep)
+    assert abs(float(r0)) < 1e-2 and not bool(d0) and float(st.last_distance) > 0  # only settling within the first frame-skip block
+    # teleport the goal object 1.0 closer to the zone (same height): reward ~ +1.0 * (dist gain)
+    d_before = float(st.last_distance)
+    pos = np.asarray(st.circle.position[goal_slot])
+    direction = (zc - pos) / np.linalg.norm(zc - pos)
+    new_pos = pos + 1.0 * direction
+    c = st.circle.replace(position=st.circle.position.at[goal_slot].set(jnp.asarray(new_pos, dtype=jnp.float32)),
+                          velocity=st.circle.velocity.at[goal_slot].set(0.0))
+    st2 = st.replace(circle=c)
+    _o, st3, r1, d1_, info1 = env_d.step(jax.random.PRNGKey(2), st2, _zero_action(env_d), ep)
+    gain = d_before - float(info1["distance"])
+    assert 0.8 < gain < 1.3, gain  # ~1.0 minus a little settling under gravity over the substeps
+    assert abs(float(r1) - gain) < 0.05
+    # moving it back away pays the negative of that (potential-based)
+    c = st3.circle.replace(position=st3.circle.position.at[goal_slot].set(jnp.asarray(pos, dtype=jnp.float32)),
+                           velocity=st3.circle.velocity.at[goal_slot].set(0.0))
+    _o, _s, r2, _d, _i = env_d.step(jax.random.PRNGKey(3), st3.replace(circle=c), _zero_action(env_d), ep)
+    assert float(r2) < -0.5

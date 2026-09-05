@@ -1030,6 +1030,7 @@ def main(config):
                 reward_first_deposit=float(config.get("reward_first_deposit", 0.0)),
                 reward_height_scale=float(config.get("reward_height_scale", 0.0)),
                 reward_wrong_deposit=float(config.get("reward_wrong_deposit", 0.0)),
+                reward_goal_distance_scale=float(config.get("reward_goal_distance_scale", 0.0)),
             )
         )
 

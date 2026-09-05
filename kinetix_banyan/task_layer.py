@@ -398,10 +398,16 @@ class BanyanKinetixEnv(KinetixEnv):
         reward_first_deposit: float = 0.0,
         reward_height_scale: float = 0.0,
         reward_wrong_deposit: float = 0.0,
+        reward_goal_distance_scale: float = 0.0,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.task_constants = constants
+        # Kinetix's stock dense shaping (dense_reward_scale, default 0.2 there),
+        # restricted to the REQUIRED object(s): scale * (last_dist - dist) where
+        # dist = nearest required object's distance to the zone centre. This is
+        # what makes the stock grasp_easy grasper learnable. 0 = off.
+        self.reward_goal_distance_scale = float(reward_goal_distance_scale)
         # Banyan's wrong-deposit penalty (Point Mass: REWARD_WRONG_DEPOSIT, non-
         # terminal): -reward_wrong_deposit the first time each NON-required object
         # enters the combine zone; the episode continues. 0 = off. Makes identity
@@ -479,17 +485,28 @@ class BanyanKinetixEnv(KinetixEnv):
         # Wrong-deposit penalty: first entry of each non-required (distractor) object.
         wrong_now = in_zone & ~is_required
         new_wrong = wrong_now & ~state.wrong_deposit_flags
+        # Dense goal-distance potential (stock Kinetix form): nearest required
+        # object's distance to the zone centre; no reward on the first step.
+        zone_center = 0.5 * (c.zone_lo + c.zone_hi)
+        dists = jnp.linalg.norm(pos - zone_center[None, :], axis=1)
+        distance = jnp.min(jnp.where(is_required, dists, jnp.inf))
+        distance = jnp.where(jnp.isfinite(distance), distance, 0.0)
+        dist_reward = jnp.where(
+            state.last_distance < 0.0, 0.0, self.reward_goal_distance_scale * (state.last_distance - distance)
+        )
         bonus = (
             self.reward_first_lift * jnp.sum(new_lifts)
             + self.reward_first_deposit * jnp.sum(new_deposits)
             + self.reward_height_scale * jnp.sum(height_gain)
             - self.reward_wrong_deposit * jnp.sum(new_wrong)
+            + dist_reward
         )
         state = state.replace(
             lift_flags=state.lift_flags | lifted_now,
             deposit_flags=state.deposit_flags | deposited_now,
             wrong_deposit_flags=state.wrong_deposit_flags | wrong_now,
             max_heights=jnp.maximum(state.max_heights, heights),
+            last_distance=distance,
         )
 
         # Bonuses are dropped on terminal steps (success is exactly +1); the
@@ -505,7 +522,7 @@ class BanyanKinetixEnv(KinetixEnv):
         )
         info = {
             "GoalR": success,
-            "distance": 0.0,  # no dense shaping; dense_reward_scale is 0
+            "distance": distance,  # goal-object distance to zone centre (stock dense_reward_scale stays 0)
             "deadend": deadend,
             "n_in_zone": jnp.sum(in_zone),
             "n_required_in_zone": n_required_in_zone,
@@ -578,6 +595,7 @@ class BanyanKinetixEnv(KinetixEnv):
                 self.reward_first_deposit,
                 self.reward_height_scale,
                 self.reward_wrong_deposit,
+                self.reward_goal_distance_scale,
             )
         )
 
@@ -598,6 +616,7 @@ def make_banyan_env(
     reward_first_deposit: float = 0.0,
     reward_height_scale: float = 0.0,
     reward_wrong_deposit: float = 0.0,
+    reward_goal_distance_scale: float = 0.0,
 ) -> "BanyanKinetixEnv":
     """Standard construction used by tests, the gate script, and PPO."""
     from kinetix.environment.spaces import (
@@ -624,6 +643,7 @@ def make_banyan_env(
         reward_first_deposit=reward_first_deposit,
         reward_height_scale=reward_height_scale,
         reward_wrong_deposit=reward_wrong_deposit,
+        reward_goal_distance_scale=reward_goal_distance_scale,
     )
 
 

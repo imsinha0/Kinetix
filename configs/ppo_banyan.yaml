@@ -76,6 +76,9 @@ reward_height_scale: 0.4
 # zone. 0 = off. Makes identity matter without the lip: flinging all k
 # distractors in pays 1 - k*p, selecting the goal object pays 1.
 reward_wrong_deposit: 0.0
+# Kinetix's stock dense distance shaping (their dense_reward_scale=0.2), applied
+# to the required object's distance to the zone centre only. 0 = off.
+reward_goal_distance_scale: 0.0
 
 # --- Two-round continual protocol (learning.total_timesteps is derived) ---
 total_timesteps_d1: 100000000
