@@ -60,3 +60,24 @@ Question: does depth-1 learn at all with the lip, and does |O| change Δ₂? Two
 Early observation from the CPU run: at update 0 the lip-0 level already has train (stochastic) success 1.0 and eval (greedy) 0.117 — the un-lipped task is solved by random flailing, confirming the lip is needed for a learnable-but-nontrivial task.
 
 Note: with disjoint pools and a 120-token vocab, each round has 60 object types, so distinct depth-1 goal types saturate at 60 for |O| ≥ 100 (logged as diversity/d1_distinct_goal_tokens).
+
+#### d1-v1 at ~30M steps (2026-09-05 18:50)
+* GPU throughput ~34k sps/run (≈1.6 h per 200M-step job).
+* **lip 0 (o1_nd0_lip0, pa6kf57u)**: greedy eval 100% on d1 by 17M and 99% on the novel-object d2 bank *during round 1* → no code-overfitting at |O|=1 when the type is irrelevant. Confirms the no-distractor arm cannot produce the Figure-5 pattern: Δ₂≈0 trivially.
+* **lip 0.55, nd0 (all |O|)**: 0% success, 0 objects ever in zone at 30M. Lift-from-floor not discovered (as in Aug probes).
+* **lip 0.55, nd3**: 0% for |O|=1,100,1000; **o10_nd3 (zc1cvt63)** jumped to ~50% at 12.6M: ~1 object/episode in zone, goal 50% of the time (chance 25%) → partially selective. Lucky discovery, not reproducible across |O|.
+* Conclusion: identity must matter for transfer to show (distractors), but the lip is the wrong anti-bulldozer (too hard). Replace it with Banyan's wrong-deposit penalty.
+
+### Batch d1-v2 (submitted 2026-09-05 18:55, SLURM 44676068-44676086) — depth 1, `reward_wrong_deposit=1.0`, 100M+100M
+Distractor in zone → terminal −1 (dead-end). Type-blind bulldozing now fails; the agent must read the goal billboard.
+
+| job | name | |O| | distr. | lip |
+|---|---|---|---|---|
+| 44676068 | o1_nd3_lip0_pen | 1 | 3 | 0 |
+| 44676071 | o10_nd3_lip0_pen | 10 | 3 | 0 |
+| 44676075 | o100_nd3_lip0_pen | 100 | 3 | 0 |
+| 44676076 | o1000_nd3_lip0_pen | 1000 | 3 | 0 |
+| 44676078 | o1_nd1_lip0_pen | 1 | 1 | 0 |
+| 44676080 | o1000_nd1_lip0_pen | 1000 | 1 | 0 |
+| 44676084 | o1_nd3_lip025_pen | 1 | 3 | 0.25 |
+| 44676086 | o1000_nd3_lip025_pen | 1000 | 3 | 0.25 |
