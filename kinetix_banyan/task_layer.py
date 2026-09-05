@@ -394,10 +394,16 @@ class BanyanKinetixEnv(KinetixEnv):
         reward_first_lift: float = 0.0,
         reward_first_deposit: float = 0.0,
         reward_height_scale: float = 0.0,
+        reward_wrong_deposit: float = 0.0,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.task_constants = constants
+        # Banyan's wrong-deposit penalty: at depth 1, a NON-goal object entering
+        # the combine zone is a terminal dead-end with reward -reward_wrong_deposit
+        # (0 = off). Makes object identity matter without a physical lip: a
+        # type-blind "bulldoze everything in" policy fails.
+        self.reward_wrong_deposit = float(reward_wrong_deposit)
         # First-time exploration bonuses (one per required object per episode;
         # non-terminal; root success/dead-end stay +1/-1 terminal). 0 = pure
         # sparse. Same values at every |O| point keeps the Fig-5 sweep fair.
@@ -431,8 +437,10 @@ class BanyanKinetixEnv(KinetixEnv):
 
         is_depth1 = state.required_lhs < 0
 
-        # Depth 1: the goal-typed object inside the zone.
+        # Depth 1: the goal-typed object inside the zone. A distractor inside
+        # the zone is a dead-end when the wrong-deposit penalty is enabled.
         d1_success = jnp.any(in_zone & (types == state.goal_token))
+        d1_deadend = (self.reward_wrong_deposit > 0.0) & jnp.any(in_zone & (types != state.goal_token)) & ~d1_success
 
         # Depth 2: pairwise over object slots inside the zone.
         ii, jj = jnp.triu_indices(NUM_OBJECT_SLOTS, k=1)
@@ -448,8 +456,9 @@ class BanyanKinetixEnv(KinetixEnv):
         d2_deadend = jnp.any(pair_valid_global & ~pair_required) & ~d2_success
 
         success = jnp.where(is_depth1, d1_success, d2_success)
-        deadend = jnp.where(is_depth1, jnp.asarray(False), d2_deadend)
-        terminal_reward = jnp.where(success, 1.0, jnp.where(deadend, -1.0, 0.0))
+        deadend = jnp.where(is_depth1, d1_deadend, d2_deadend)
+        deadend_penalty = jnp.where(is_depth1, self.reward_wrong_deposit, 1.0)
+        terminal_reward = jnp.where(success, 1.0, jnp.where(deadend, -deadend_penalty, 0.0))
         terminal = success | deadend
 
         # First-time event bonuses for REQUIRED objects only (goal-typed at
@@ -557,6 +566,7 @@ class BanyanKinetixEnv(KinetixEnv):
                 self.reward_first_lift,
                 self.reward_first_deposit,
                 self.reward_height_scale,
+                self.reward_wrong_deposit,
             )
         )
 
@@ -576,6 +586,7 @@ def make_banyan_env(
     reward_first_lift: float = 0.0,
     reward_first_deposit: float = 0.0,
     reward_height_scale: float = 0.0,
+    reward_wrong_deposit: float = 0.0,
 ) -> "BanyanKinetixEnv":
     """Standard construction used by tests, the gate script, and PPO."""
     from kinetix.environment.spaces import (
@@ -601,6 +612,7 @@ def make_banyan_env(
         reward_first_lift=reward_first_lift,
         reward_first_deposit=reward_first_deposit,
         reward_height_scale=reward_height_scale,
+        reward_wrong_deposit=reward_wrong_deposit,
     )
 
 

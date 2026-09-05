@@ -71,6 +71,10 @@ pretrained_checkpoint: null
 # object, clipped at the lip top; monotone -> bounded ~0.3/object). Added
 # after run 5rvnh5u0 showed exploration never produces even one lift.
 reward_height_scale: 0.4
+# Banyan's wrong-deposit penalty (depth 1): a distractor entering the zone is a
+# terminal dead-end with reward -reward_wrong_deposit. 0 = off. Makes identity
+# matter without needing the lip to block bulldozing.
+reward_wrong_deposit: 0.0
 
 # --- Two-round continual protocol (learning.total_timesteps is derived) ---
 total_timesteps_d1: 100000000

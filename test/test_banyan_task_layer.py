@@ -492,3 +492,35 @@ def test_obs_rule_block_carries_tree_info(setup):
     base = setup["base"]
     assert bool(base.circle.active[RULE_BILLBOARD_IDX])
     assert int(base.circle.collision_mode[RULE_BILLBOARD_IDX]) == 0
+
+
+def test_wrong_deposit_penalty_depth1(setup):
+    # With distractors and the penalty on, a non-goal object in the zone is a terminal -1.
+    reset3 = make_banyan_reset_fn(setup["base"], setup["constants"], setup["d1_bank"], num_distractors=3)
+    env_pen = make_banyan_env(
+        base_state=setup["base"], static_env_params=setup["static"], env_params=setup["env_params"],
+        constants=setup["constants"], reset_fn=reset3, action_type="continuous", reward_wrong_deposit=1.0,
+    )
+    env_off = make_banyan_env(
+        base_state=setup["base"], static_env_params=setup["static"], env_params=setup["env_params"],
+        constants=setup["constants"], reset_fn=reset3, action_type="continuous", reward_wrong_deposit=0.0,
+    )
+    ep = setup["env_params"]
+    bank = setup["d1_bank"]
+    idx = int(np.nonzero(np.asarray(bank["depth"]) == 1)[0][0])
+    row_bank = {k: v[idx : idx + 1] for k, v in bank.items()}
+    state = make_banyan_reset_fn(setup["base"], setup["constants"], row_bank, num_distractors=3)(jax.random.PRNGKey(5))
+    goal = int(_sc(state.goal_token))
+    types = np.asarray(state.circle_types)
+    wrong = [s for s in OBJECT_SLOTS if types[s] >= 0 and types[s] != goal][0]
+    right = [s for s in OBJECT_SLOTS if types[s] == goal][0]
+    center = _zone_center(setup["constants"])
+    st = _place_in_zone(state, {wrong: center})
+    _o, _s, r, d, info = env_pen.step(jax.random.PRNGKey(1), st, _zero_action(env_pen), ep)
+    assert float(r) == -1.0 and bool(d) and bool(np.asarray(info["deadend"]))
+    _o, _s, r0, d0, info0 = env_off.step(jax.random.PRNGKey(1), st, _zero_action(env_off), ep)
+    assert float(r0) == 0.0 and not bool(d0) and not bool(np.asarray(info0["deadend"]))
+    # goal object in the zone still succeeds (+1) even if a distractor is there too
+    st2 = _place_in_zone(state, {right: center + np.array([-0.15, 0.0]), wrong: center + np.array([0.15, 0.0])})
+    _o, _s, r2, d2, info2 = env_pen.step(jax.random.PRNGKey(1), st2, _zero_action(env_pen), ep)
+    assert float(r2) == 1.0 and bool(d2) and bool(np.asarray(info2["GoalR"]))
