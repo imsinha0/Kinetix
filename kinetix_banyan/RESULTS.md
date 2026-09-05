@@ -36,19 +36,27 @@ W&B: https://wandb.ai/imsinha-harvard-university/kinetix-banyan
 | id | group / name | |O| | distr. | lip | steps | S_end(d1) | S_start(d2) | Δ₂ | B(2,1) | notes / wandb |
 |---|---|---|---|---|---|---|---|---|---|---|
 
-### Batch d1-v1 (submitted 2026-09-05 17:35, SLURM 44665145-44665173) — depth 1, lip 0.55, 256 steps, 100M+100M, seed 0
+### Incident 2026-09-05: first d1-v1 submission (44665145-44665173) ran on CPU
+The venv's `jax_plugins/xla_cuda12/xla_cuda_plugin.so` (429 MB) was missing after the
+move from lab storage; JAX silently fell back to CPU (~310 sps). Killed after 30 min,
+W&B runs deleted, `jax[cuda12]==0.9.0` reinstalled, GPU verified via srun, and
+`run_ppo.sh` now aborts if JAX has no GPU device. Resubmitted as 44670876-44670887.
+
+### Batch d1-v1 (submitted 2026-09-05 18:20, SLURM 44670876-44670887) — depth 1, lip 0.55, 256 steps, 100M+100M, seed 0
 Question: does depth-1 learn at all with the lip, and does |O| change Δ₂? Two arms: no distractors (nd0) vs 3 distractors (nd3, agent must read the goal billboard). Plus a lip-0 probe to measure how trivial the un-lipped task is.
 
 | job | name | |O| | distr. | lip |
 |---|---|---|---|---|
-| 44665145 | o1_nd0 | 1 | 0 | 0.55 |
-| 44665150 | o10_nd0 | 10 | 0 | 0.55 |
-| 44665151 | o100_nd0 | 100 | 0 | 0.55 |
-| 44665154 | o1000_nd0 | 1000 | 0 | 0.55 |
-| 44665155 | o1_nd3 | 1 | 3 | 0.55 |
-| 44665156 | o10_nd3 | 10 | 3 | 0.55 |
-| 44665166 | o100_nd3 | 100 | 3 | 0.55 |
-| 44665170 | o1000_nd3 | 1000 | 3 | 0.55 |
-| 44665173 | o1_nd0_lip0 | 1 | 0 | 0 |
+| 44670876 | o1_nd0 | 1 | 0 | 0.55 |
+| 44670877 | o10_nd0 | 10 | 0 | 0.55 |
+| 44670878 | o100_nd0 | 100 | 0 | 0.55 |
+| 44670879 | o1000_nd0 | 1000 | 0 | 0.55 |
+| 44670880 | o1_nd3 | 1 | 3 | 0.55 |
+| 44670881 | o10_nd3 | 10 | 3 | 0.55 |
+| 44670882 | o100_nd3 | 100 | 3 | 0.55 |
+| 44670886 | o1000_nd3 | 1000 | 3 | 0.55 |
+| 44670887 | o1_nd0_lip0 | 1 | 0 | 0 |
+
+Early observation from the CPU run: at update 0 the lip-0 level already has train (stochastic) success 1.0 and eval (greedy) 0.117 — the un-lipped task is solved by random flailing, confirming the lip is needed for a learnable-but-nontrivial task.
 
 Note: with disjoint pools and a 120-token vocab, each round has 60 object types, so distinct depth-1 goal types saturate at 60 for |O| ≥ 100 (logged as diversity/d1_distinct_goal_tokens).
