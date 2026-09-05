@@ -8,7 +8,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --mem=48G
 #SBATCH --time=04:00:00
-#SBATCH --account=kempner_wcarvalho_lab
+#SBATCH --account=kempner_gershman_lab
 #SBATCH --partition=kempner_h100
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}"
