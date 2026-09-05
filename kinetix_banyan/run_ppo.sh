@@ -18,6 +18,9 @@ PY=".venv/bin/python"
 
 # Hydra-style overrides come straight from OVERRIDES.
 OVERRIDES="${OVERRIDES:-}"
+# Fail fast if JAX cannot see the GPU (a silent CPU fallback burned a whole batch once).
+"${PY}" -c "import jax, sys; d = jax.devices(); print('JAX devices:', d); sys.exit(0 if d[0].platform == 'gpu' else 1)" \
+  || { echo "FATAL: JAX is not running on a GPU — check the venv's jax[cuda12] install"; exit 1; }
 echo "launching ppo_banyan on $(hostname) with overrides: ${OVERRIDES}"
 # shellcheck disable=SC2086
 "${PY}" experiments/ppo_banyan.py ${OVERRIDES}
