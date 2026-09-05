@@ -87,3 +87,15 @@ Distractor in zone → terminal −1 (dead-end). Type-blind bulldozing now fails
 * d1-v1 lip 0.55: every run (nd0 and nd3, all |O|) reached the boundary with S_end(d1)=0, S_start(d2)=0; the o10_nd3 flinger decayed back to 0. Cancelled all except o1_nd0_lip0 (S_end_d1=1.0, S_start_d2=0.994 → Δ₂≈0.006 at |O|=1: no gap when identity is irrelevant).
 * d1-v2 (lip 0, **terminal** −1 wrong deposit): untrained floor = bulldoze chance (nd1 ≈0.56, nd3 ≈0.27). Then every run except one collapsed to 0%: the agent learns to avoid the zone (0 beats expected −0.5). **o1_nd1_lip0_pen (l1vy1de4)**: 100% on d1 by 17M, **81% on novel-object d2** (flat) → identity is used and a forward gap Δ₂≈0.19 exists at |O|=1. Cancelled the 0% runs; kept l1vy1de4 and the two pending lip-0.25 runs.
 * Fix: make the penalty **non-terminal** (as in Point Mass, REWARD_WRONG_DEPOSIT=−0.02 there), charged once per distractor entering the zone, p=0.3: bulldozing k distractors pays 1−k·p (>0, so approach is never extinguished) while selecting pays 1.
+
+### Batch d1-v3 (submitted 2026-09-05 19:55, SLURM 44684011-44684033) — depth 1, lip 0, non-terminal `reward_wrong_deposit=0.3`, 100M+100M
+| job | name | |O| | distr. |
+|---|---|---|---|
+| 44684011 | o1_nd1_p03 | 1 | 1 |
+| 44684024 | o10_nd1_p03 | 10 | 1 |
+| 44684027 | o100_nd1_p03 | 100 | 1 |
+| 44684028 | o1000_nd1_p03 | 1000 | 1 |
+| 44684029 | o1_nd3_p03 | 1 | 3 |
+| 44684030 | o10_nd3_p03 | 10 | 3 |
+| 44684031 | o100_nd3_p03 | 100 | 3 |
+| 44684033 | o1000_nd3_p03 | 1000 | 3 |
