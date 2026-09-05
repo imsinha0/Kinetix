@@ -26,6 +26,11 @@ fixed random code vectors appended to the circle entity features; the goal
 type is exposed as a fixated, non-colliding "billboard" circle carrying the
 goal token's code. Codes are identity, constant across all tasks — they never
 mark which pair is correct.
+
+Tree information (Banyan's OBS_INCLUDE_TREE / child-tokens block): the
+task's required rule (lhs, rhs -> out) is exposed as a second fixated
+"rule billboard" circle whose extra feature columns carry the three codes
+plus a valid flag. At depth 1 there is no rule and the block is all zeros.
 """
 
 from __future__ import annotations
@@ -51,7 +56,7 @@ from kinetix.util.saving import expand_env_state, load_from_json_file
 #             claw fingers; 10 fixated platform (-> combine zone); 11 stock
 #             carry box (deactivated).
 #   circles:  0 arm anchor (fixated), 1 pedestal (fixated), 2 goal billboard,
-#             3-6 typed object slots, 7 spare (inactive).
+#             3-6 typed object slots, 7 rule billboard (tree info).
 BASE_LEVEL = "l/grasp_easy"
 NUM_CIRCLES = 8
 BILLBOARD_IDX = 2
@@ -71,7 +76,11 @@ LIP_POLY_IDX = STOCK_BOX_POLY_IDX
 LIP_HALF_WIDTH = 0.06
 LIP_HEIGHT = 0.55
 BILLBOARD_POSITION = (0.5, 4.5)
+RULE_BILLBOARD_IDX = 7
+RULE_BILLBOARD_POSITION = (1.5, 4.5)
 TYPE_CODE_DIM = 32
+# Rule block appended to every circle row: [code(lhs), code(rhs), code(out), valid]
+RULE_BLOCK_DIM = 3 * TYPE_CODE_DIM + 1
 TYPE_CODE_SEED = 1234
 
 
@@ -87,6 +96,7 @@ class BanyanEnvState(EnvState):
     goal_token: jnp.ndarray = None  # scalar int32
     required_lhs: jnp.ndarray = None  # scalar int32, -1 at depth 1
     required_rhs: jnp.ndarray = None  # scalar int32, -1 at depth 1
+    required_out: jnp.ndarray = None  # scalar int32, -1 at depth 1 (rule product = goal at depth 2)
     task_depth: jnp.ndarray = None  # scalar int32
     task_id: jnp.ndarray = None  # scalar int32
     # First-time event flags for exploration shaping (per object slot).
@@ -211,17 +221,20 @@ def prepare_banyan_level(
     )
     assert (spawn_positions[:, 0] < zone_lo[0]).all(), "spawn spot inside combine zone"
 
-    # Billboard: fixated, non-colliding (collision_mode 0), carries the goal
-    # token's type code in the observation.
+    # Billboards: fixated, non-colliding (collision_mode 0). The goal billboard
+    # carries the goal token's type code; the rule billboard carries the
+    # required rule's (lhs, rhs, out) codes (tree information). Both are always
+    # present so the observation shape is constant across depths.
     circle = state.circle
-    circle = circle.replace(
-        position=circle.position.at[BILLBOARD_IDX].set(jnp.asarray(BILLBOARD_POSITION)),
-        radius=circle.radius.at[BILLBOARD_IDX].set(0.15),
-        active=circle.active.at[BILLBOARD_IDX].set(True),
-        collision_mode=circle.collision_mode.at[BILLBOARD_IDX].set(0),
-        inverse_mass=circle.inverse_mass.at[BILLBOARD_IDX].set(0.0),
-        inverse_inertia=circle.inverse_inertia.at[BILLBOARD_IDX].set(0.0),
-    )
+    for idx, pos in ((BILLBOARD_IDX, BILLBOARD_POSITION), (RULE_BILLBOARD_IDX, RULE_BILLBOARD_POSITION)):
+        circle = circle.replace(
+            position=circle.position.at[idx].set(jnp.asarray(pos)),
+            radius=circle.radius.at[idx].set(0.15),
+            active=circle.active.at[idx].set(True),
+            collision_mode=circle.collision_mode.at[idx].set(0),
+            inverse_mass=circle.inverse_mass.at[idx].set(0.0),
+            inverse_inertia=circle.inverse_inertia.at[idx].set(0.0),
+        )
 
     # Typed object slots: dynamic circles (positions set per episode).
     obj = jnp.asarray(OBJECT_SLOTS)
@@ -261,6 +274,7 @@ def prepare_banyan_level(
         goal_token=jnp.asarray(-1, dtype=jnp.int32),
         required_lhs=jnp.asarray(-1, dtype=jnp.int32),
         required_rhs=jnp.asarray(-1, dtype=jnp.int32),
+        required_out=jnp.asarray(-1, dtype=jnp.int32),
         task_depth=jnp.asarray(0, dtype=jnp.int32),
         task_id=jnp.asarray(-1, dtype=jnp.int32),
         lift_flags=jnp.zeros((NUM_OBJECT_SLOTS,), dtype=jnp.bool_),
@@ -300,6 +314,7 @@ def make_banyan_reset_fn(
     goal_tokens = jnp.asarray(task_bank["goal_token"], dtype=jnp.int32)
     rule_lhs = jnp.asarray(task_bank["required_rule_lhs"], dtype=jnp.int32)
     rule_rhs = jnp.asarray(task_bank["required_rule_rhs"], dtype=jnp.int32)
+    rule_out = jnp.asarray(task_bank["required_rule_out"], dtype=jnp.int32)
     rule_valid = jnp.asarray(task_bank["required_rule_valid"], dtype=jnp.bool_)
     depths = jnp.asarray(task_bank["depth"], dtype=jnp.int32)
     task_ids = jnp.asarray(task_bank["task_id"], dtype=jnp.int32)
@@ -340,6 +355,7 @@ def make_banyan_reset_fn(
         has_rule = rule_valid[row, 0]
         lhs = jnp.where(has_rule, rule_lhs[row, 0], -1)
         rhs = jnp.where(has_rule, rule_rhs[row, 0], -1)
+        out = jnp.where(has_rule, rule_out[row, 0], -1)
 
         return base_state.replace(
             circle=circle,
@@ -347,6 +363,7 @@ def make_banyan_reset_fn(
             goal_token=goal_tokens[row],
             required_lhs=jnp.minimum(lhs, rhs),
             required_rhs=jnp.maximum(lhs, rhs),
+            required_out=out,
             task_depth=depths[row],
             task_id=task_ids[row],
             timestep=jnp.asarray(0, dtype=jnp.int32),
@@ -588,12 +605,15 @@ def make_banyan_env(
 
 
 class BanyanEntityObservations(EntityObservations):
-    """Entity observations + per-circle type-code columns.
+    """Entity observations + per-circle type-code columns + tree/rule block.
 
     The base features already include the (all-zero) role one-hot; we append
     TYPE_CODE_DIM identity-code columns to the circle feature matrix. Objects
-    carry their leaf token's code, the billboard carries the goal token's
-    code, everything else (and inactive slots) is zero.
+    carry their leaf token's code, the goal billboard carries the goal token's
+    code, everything else (and inactive slots) is zero. A further RULE_BLOCK_DIM
+    columns hold the required rule [code(lhs), code(rhs), code(out), valid] on
+    the rule-billboard row only (zeros elsewhere, and all-zero at depth 1) —
+    the analogue of Banyan's OBS_INCLUDE_TREE / child-tokens observation.
     """
 
     def __init__(self, env_params, static_env_params, constants: BanyanTaskConstants):
@@ -602,9 +622,14 @@ class BanyanEntityObservations(EntityObservations):
 
     def get_obs(self, state: BanyanEnvState):
         base = super().get_obs(state)
-        codes = self.task_constants.type_codes[state.circle_types + 1]
-        codes = codes * state.circle.active[:, None]
-        return base.replace(circles=jnp.concatenate([base.circles, codes], axis=1))
+        table = self.task_constants.type_codes
+        codes = table[state.circle_types + 1] * state.circle.active[:, None]
+        valid = (state.required_lhs >= 0).astype(jnp.float32)
+        rule_row = jnp.concatenate(
+            [table[state.required_lhs + 1], table[state.required_rhs + 1], table[state.required_out + 1], valid[None]]
+        )
+        rule = jnp.zeros((codes.shape[0], RULE_BLOCK_DIM), dtype=jnp.float32).at[RULE_BILLBOARD_IDX].set(rule_row)
+        return base.replace(circles=jnp.concatenate([base.circles, codes, rule], axis=1))
 
     def observation_space(self, env_params):
         space = super().observation_space(env_params)
@@ -612,7 +637,7 @@ class BanyanEntityObservations(EntityObservations):
         space.spaces["circles"] = type(circ)(
             -np.inf,
             np.inf,
-            (circ.shape[0], circ.shape[1] + TYPE_CODE_DIM),
+            (circ.shape[0], circ.shape[1] + TYPE_CODE_DIM + RULE_BLOCK_DIM),
             circ.dtype,
         )
         return space

@@ -16,6 +16,8 @@ from kinetix_banyan.task_layer import (
     BILLBOARD_IDX,
     NUM_OBJECT_SLOTS,
     OBJECT_SLOTS,
+    RULE_BILLBOARD_IDX,
+    RULE_BLOCK_DIM,
     TYPE_CODE_DIM,
     BanyanEnvState,
     make_banyan_env,
@@ -267,8 +269,8 @@ def test_obs_type_codes_and_no_role_leak(setup):
     state = setup["reset_fn"](jax.random.PRNGKey(11))
     obs = env.get_obs(state)
     n_circ = setup["static"].num_circles
-    assert obs.circles.shape == (n_circ, 19 + TYPE_CODE_DIM)
-    codes = np.asarray(obs.circles[:, 19:])
+    assert obs.circles.shape == (n_circ, 19 + TYPE_CODE_DIM + RULE_BLOCK_DIM)
+    codes = np.asarray(obs.circles[:, 19 : 19 + TYPE_CODE_DIM])
     table = np.asarray(constants.type_codes)
     goal = int(_sc(state.goal_token))
     np.testing.assert_allclose(codes[BILLBOARD_IDX], table[goal + 1], atol=1e-6)
@@ -463,3 +465,30 @@ def test_num_distractors_activates_extra_bank_slots(setup):
             # distractor types are never the goal type
             goal = int(_sc(state.goal_token))
             assert all(types[i] != goal for i in range(NUM_OBJECT_SLOTS) if active[i] and not req[i])
+
+
+def test_obs_rule_block_carries_tree_info(setup):
+    env, constants = setup["env"], setup["constants"]
+    table = np.asarray(constants.type_codes)
+    D = TYPE_CODE_DIM
+    for depth in (1, 2):
+        state = _fresh_depth_state(setup, depth)
+        obs = env.get_obs(state)
+        block = np.asarray(obs.circles[:, 19 + D :])
+        assert block.shape[1] == RULE_BLOCK_DIM
+        others = np.delete(block, RULE_BILLBOARD_IDX, axis=0)
+        assert np.abs(others).sum() == 0.0  # rule info only on the rule billboard row
+        row = block[RULE_BILLBOARD_IDX]
+        if depth == 1:
+            assert np.abs(row).sum() == 0.0  # no rule at depth 1
+        else:
+            lhs, rhs, out = (int(_sc(state.required_lhs)), int(_sc(state.required_rhs)), int(_sc(state.required_out)))
+            assert out == int(_sc(state.goal_token))
+            np.testing.assert_allclose(row[:D], table[lhs + 1], atol=1e-6)
+            np.testing.assert_allclose(row[D : 2 * D], table[rhs + 1], atol=1e-6)
+            np.testing.assert_allclose(row[2 * D : 3 * D], table[out + 1], atol=1e-6)
+            assert row[3 * D] == 1.0
+    # both billboards fixated and non-colliding
+    base = setup["base"]
+    assert bool(base.circle.active[RULE_BILLBOARD_IDX])
+    assert int(base.circle.collision_mode[RULE_BILLBOARD_IDX]) == 0

@@ -679,14 +679,37 @@ def make_train(config, env_params, static_env_params, envs, full_sets, periodic_
             )
         )
 
-    def _make_run_round(update_fn, num_updates):
+    def _make_run_chunk(update_fn, num_updates):
         def run(runner_state):
             return jax.lax.scan(update_fn, runner_state, None, num_updates)
 
         return jax.jit(run)
 
     init_fns = {r: make_init_fn(envs[r]) for r in (1, 2)}
-    run_round_fns = {r: _make_run_round(make_update_step(envs[r], r), config[f"num_updates_d{r}"]) for r in (1, 2)}
+    update_fns = {r: make_update_step(envs[r], r) for r in (1, 2)}
+    run_chunk_cache = {}
+
+    def run_round(round_idx, runner_state, rng):
+        """Run one round's updates in chunks of ``video_freq_updates``, logging
+        GIFs of the fixed video episodes between chunks. (The boundary and
+        final videos are logged by the caller.) Compiles once per distinct
+        chunk length."""
+        num_updates = int(config[f"num_updates_d{round_idx}"])
+        chunk = int(config.get("video_freq_updates", 0)) or num_updates
+        chunk = max(1, min(chunk, num_updates))
+        done = 0
+        while done < num_updates:
+            n = min(chunk, num_updates - done)
+            key = (round_idx, n)
+            if key not in run_chunk_cache:
+                run_chunk_cache[key] = _make_run_chunk(update_fns[round_idx], n)
+            runner_state, _ = run_chunk_cache[key](runner_state)
+            done += n
+            if done < num_updates:
+                rng, _rng = jax.random.split(rng)
+                videos = jax.device_get(video_eval_fn(_rng, runner_state.train_state, runner_state.extra["rms"]))
+                _log_videos(videos, round_idx, runner_state.update_step)
+        return runner_state
 
     def _log_full_eval(metrics, extra_metrics, update_step, round_idx):
         to_log = {k: float(v) for k, v in metrics.items()}
@@ -819,7 +842,8 @@ def make_train(config, env_params, static_env_params, envs, full_sets, periodic_
 
         # ROUND 1: train on the d1 bank
         logger.info(f"Round 1: {config['num_updates_d1']} updates on the d1 bank")
-        runner_state, _ = run_round_fns[1](runner_state)
+        rng, _rng = jax.random.split(rng)
+        runner_state = run_round(1, runner_state, _rng)
         jax.block_until_ready(runner_state.train_state.params)
         assert int(runner_state.update_step) == config["num_updates_d1"]
         protocol.append("round1_train")
@@ -860,7 +884,8 @@ def make_train(config, env_params, static_env_params, envs, full_sets, periodic_
         protocol.append("round2_init")
 
         logger.info(f"Round 2: {config['num_updates_d2']} updates on the d2 bank")
-        runner_state, _ = run_round_fns[2](runner_state)
+        rng, _rng = jax.random.split(rng)
+        runner_state = run_round(2, runner_state, _rng)
         jax.block_until_ready(runner_state.train_state.params)
         assert int(runner_state.update_step) == config["num_updates_d1"] + config["num_updates_d2"]
         protocol.append("round2_train")

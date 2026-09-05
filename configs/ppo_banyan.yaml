@@ -73,8 +73,8 @@ pretrained_checkpoint: null
 reward_height_scale: 0.4
 
 # --- Two-round continual protocol (learning.total_timesteps is derived) ---
-total_timesteps_d1: 50000000
-total_timesteps_d2: 50000000
+total_timesteps_d1: 100000000
+total_timesteps_d2: 100000000
 
 # --- Banyan eval: N fixed episodes per (bank x depth) ---
 eval_freq: 16
@@ -82,6 +82,9 @@ eval_temperature: 0.0001
 eval_num_episodes_periodic: 128
 eval_num_episodes_full: 512
 eval_num_video_episodes: 4
+# Log GIFs of the fixed video episodes (both banks) every N updates during
+# each round, in addition to the boundary and final videos. 0 = boundary/final only.
+video_freq_updates: 128
 
 # Keys expected by normalise_config; env/static params actually come from
 # prepare_banyan_level, not from an env_size preset.
