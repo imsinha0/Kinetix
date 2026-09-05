@@ -81,3 +81,4 @@ Distractor in zone → terminal −1 (dead-end). Type-blind bulldozing now fails
 | 44676080 | o1000_nd1_lip0_pen | 1000 | 1 | 0 |
 | 44676084 | o1_nd3_lip025_pen | 1 | 3 | 0.25 |
 | 44676086 | o1000_nd3_lip025_pen | 1000 | 3 | 0.25 |
+* 19:05: cancelled d1v1 o10/o100/o1000_nd0 (lip 0.55, 0% at 35M; the nd0 arm cannot show a diversity effect anyway) to free the per-user GPU cap (QOSMaxGRESPerUser) for d1-v2. Kept o1_nd0, o1_nd0_lip0 and all nd3 runs.
