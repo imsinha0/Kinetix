@@ -102,6 +102,7 @@ class BanyanEnvState(EnvState):
     # First-time event flags for exploration shaping (per object slot).
     lift_flags: jnp.ndarray = None  # (NUM_OBJECT_SLOTS,) bool
     deposit_flags: jnp.ndarray = None  # (NUM_OBJECT_SLOTS,) bool
+    wrong_deposit_flags: jnp.ndarray = None  # (NUM_OBJECT_SLOTS,) bool: distractor already penalised
     # Highest y each object has reached (clipped at lip_top), for the dense
     # height-progress potential. Monotone -> bounded total shaping.
     max_heights: jnp.ndarray = None  # (NUM_OBJECT_SLOTS,) float32
@@ -279,6 +280,7 @@ def prepare_banyan_level(
         task_id=jnp.asarray(-1, dtype=jnp.int32),
         lift_flags=jnp.zeros((NUM_OBJECT_SLOTS,), dtype=jnp.bool_),
         deposit_flags=jnp.zeros((NUM_OBJECT_SLOTS,), dtype=jnp.bool_),
+        wrong_deposit_flags=jnp.zeros((NUM_OBJECT_SLOTS,), dtype=jnp.bool_),
         max_heights=jnp.zeros((NUM_OBJECT_SLOTS,), dtype=jnp.float32),
     )
 
@@ -374,6 +376,7 @@ def make_banyan_reset_fn(
             # (its max starts at the spawn height).
             lift_flags=positions[:, 1] >= constants.lip_top,
             deposit_flags=jnp.zeros((NUM_OBJECT_SLOTS,), dtype=jnp.bool_),
+            wrong_deposit_flags=jnp.zeros((NUM_OBJECT_SLOTS,), dtype=jnp.bool_),
             max_heights=jnp.minimum(positions[:, 1], constants.lip_top).astype(jnp.float32),
         )
 
@@ -399,10 +402,11 @@ class BanyanKinetixEnv(KinetixEnv):
     ):
         super().__init__(*args, **kwargs)
         self.task_constants = constants
-        # Banyan's wrong-deposit penalty: at depth 1, a NON-goal object entering
-        # the combine zone is a terminal dead-end with reward -reward_wrong_deposit
-        # (0 = off). Makes object identity matter without a physical lip: a
-        # type-blind "bulldoze everything in" policy fails.
+        # Banyan's wrong-deposit penalty (Point Mass: REWARD_WRONG_DEPOSIT, non-
+        # terminal): -reward_wrong_deposit the first time each NON-required object
+        # enters the combine zone; the episode continues. 0 = off. Makes identity
+        # matter without a physical lip: flinging everything in still succeeds
+        # but pays 1 - k*p, selecting the right object pays 1.
         self.reward_wrong_deposit = float(reward_wrong_deposit)
         # First-time exploration bonuses (one per required object per episode;
         # non-terminal; root success/dead-end stay +1/-1 terminal). 0 = pure
@@ -437,10 +441,8 @@ class BanyanKinetixEnv(KinetixEnv):
 
         is_depth1 = state.required_lhs < 0
 
-        # Depth 1: the goal-typed object inside the zone. A distractor inside
-        # the zone is a dead-end when the wrong-deposit penalty is enabled.
+        # Depth 1: the goal-typed object inside the zone.
         d1_success = jnp.any(in_zone & (types == state.goal_token))
-        d1_deadend = (self.reward_wrong_deposit > 0.0) & jnp.any(in_zone & (types != state.goal_token)) & ~d1_success
 
         # Depth 2: pairwise over object slots inside the zone.
         ii, jj = jnp.triu_indices(NUM_OBJECT_SLOTS, k=1)
@@ -456,9 +458,8 @@ class BanyanKinetixEnv(KinetixEnv):
         d2_deadend = jnp.any(pair_valid_global & ~pair_required) & ~d2_success
 
         success = jnp.where(is_depth1, d1_success, d2_success)
-        deadend = jnp.where(is_depth1, d1_deadend, d2_deadend)
-        deadend_penalty = jnp.where(is_depth1, self.reward_wrong_deposit, 1.0)
-        terminal_reward = jnp.where(success, 1.0, jnp.where(deadend, -deadend_penalty, 0.0))
+        deadend = jnp.where(is_depth1, jnp.asarray(False), d2_deadend)
+        terminal_reward = jnp.where(success, 1.0, jnp.where(deadend, -1.0, 0.0))
         terminal = success | deadend
 
         # First-time event bonuses for REQUIRED objects only (goal-typed at
@@ -475,18 +476,27 @@ class BanyanKinetixEnv(KinetixEnv):
         new_deposits = deposited_now & ~state.deposit_flags
         heights = jnp.minimum(pos[:, 1], c.lip_top)
         height_gain = jnp.maximum(heights - state.max_heights, 0.0) * is_required
+        # Wrong-deposit penalty: first entry of each non-required (distractor) object.
+        wrong_now = in_zone & ~is_required
+        new_wrong = wrong_now & ~state.wrong_deposit_flags
         bonus = (
             self.reward_first_lift * jnp.sum(new_lifts)
             + self.reward_first_deposit * jnp.sum(new_deposits)
             + self.reward_height_scale * jnp.sum(height_gain)
+            - self.reward_wrong_deposit * jnp.sum(new_wrong)
         )
         state = state.replace(
             lift_flags=state.lift_flags | lifted_now,
             deposit_flags=state.deposit_flags | deposited_now,
+            wrong_deposit_flags=state.wrong_deposit_flags | wrong_now,
             max_heights=jnp.maximum(state.max_heights, heights),
         )
 
-        reward = terminal_reward + jnp.where(terminal, 0.0, bonus)
+        # Bonuses are dropped on terminal steps (success is exactly +1); the
+        # wrong-deposit penalty is always charged so bulldozing never nets +1.
+        reward = terminal_reward + jnp.where(terminal, 0.0, bonus) - jnp.where(
+            terminal, self.reward_wrong_deposit * jnp.sum(new_wrong), 0.0
+        )
 
         n_required_in_zone = jnp.where(
             is_depth1,
@@ -499,6 +509,7 @@ class BanyanKinetixEnv(KinetixEnv):
             "deadend": deadend,
             "n_in_zone": jnp.sum(in_zone),
             "n_required_in_zone": n_required_in_zone,
+            "n_wrong_in_zone": jnp.sum(wrong_now),
             "task_depth": state.task_depth,
         }
         return state, reward, terminal, info

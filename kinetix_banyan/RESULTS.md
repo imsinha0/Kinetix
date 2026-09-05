@@ -82,3 +82,8 @@ Distractor in zone → terminal −1 (dead-end). Type-blind bulldozing now fails
 | 44676084 | o1_nd3_lip025_pen | 1 | 3 | 0.25 |
 | 44676086 | o1000_nd3_lip025_pen | 1000 | 3 | 0.25 |
 * 19:05: cancelled d1v1 o10/o100/o1000_nd0 (lip 0.55, 0% at 35M; the nd0 arm cannot show a diversity effect anyway) to free the per-user GPU cap (QOSMaxGRESPerUser) for d1-v2. Kept o1_nd0, o1_nd0_lip0 and all nd3 runs.
+
+#### d1-v1 boundary + d1-v2 at ~60M (2026-09-05 19:45)
+* d1-v1 lip 0.55: every run (nd0 and nd3, all |O|) reached the boundary with S_end(d1)=0, S_start(d2)=0; the o10_nd3 flinger decayed back to 0. Cancelled all except o1_nd0_lip0 (S_end_d1=1.0, S_start_d2=0.994 → Δ₂≈0.006 at |O|=1: no gap when identity is irrelevant).
+* d1-v2 (lip 0, **terminal** −1 wrong deposit): untrained floor = bulldoze chance (nd1 ≈0.56, nd3 ≈0.27). Then every run except one collapsed to 0%: the agent learns to avoid the zone (0 beats expected −0.5). **o1_nd1_lip0_pen (l1vy1de4)**: 100% on d1 by 17M, **81% on novel-object d2** (flat) → identity is used and a forward gap Δ₂≈0.19 exists at |O|=1. Cancelled the 0% runs; kept l1vy1de4 and the two pending lip-0.25 runs.
+* Fix: make the penalty **non-terminal** (as in Point Mass, REWARD_WRONG_DEPOSIT=−0.02 there), charged once per distractor entering the zone, p=0.3: bulldozing k distractors pays 1−k·p (>0, so approach is never extinguished) while selecting pays 1.

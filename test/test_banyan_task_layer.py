@@ -495,16 +495,13 @@ def test_obs_rule_block_carries_tree_info(setup):
 
 
 def test_wrong_deposit_penalty_depth1(setup):
-    # With distractors and the penalty on, a non-goal object in the zone is a terminal -1.
+    # Non-terminal: -p the first time each distractor enters the zone; success still +1 (minus new penalties).
     reset3 = make_banyan_reset_fn(setup["base"], setup["constants"], setup["d1_bank"], num_distractors=3)
-    env_pen = make_banyan_env(
+    mk = lambda pen: make_banyan_env(
         base_state=setup["base"], static_env_params=setup["static"], env_params=setup["env_params"],
-        constants=setup["constants"], reset_fn=reset3, action_type="continuous", reward_wrong_deposit=1.0,
+        constants=setup["constants"], reset_fn=reset3, action_type="continuous", reward_wrong_deposit=pen,
     )
-    env_off = make_banyan_env(
-        base_state=setup["base"], static_env_params=setup["static"], env_params=setup["env_params"],
-        constants=setup["constants"], reset_fn=reset3, action_type="continuous", reward_wrong_deposit=0.0,
-    )
+    env_pen, env_off = mk(0.3), mk(0.0)
     ep = setup["env_params"]
     bank = setup["d1_bank"]
     idx = int(np.nonzero(np.asarray(bank["depth"]) == 1)[0][0])
@@ -512,15 +509,23 @@ def test_wrong_deposit_penalty_depth1(setup):
     state = make_banyan_reset_fn(setup["base"], setup["constants"], row_bank, num_distractors=3)(jax.random.PRNGKey(5))
     goal = int(_sc(state.goal_token))
     types = np.asarray(state.circle_types)
-    wrong = [s for s in OBJECT_SLOTS if types[s] >= 0 and types[s] != goal][0]
+    wrongs = [s for s in OBJECT_SLOTS if types[s] >= 0 and types[s] != goal]
     right = [s for s in OBJECT_SLOTS if types[s] == goal][0]
     center = _zone_center(setup["constants"])
-    st = _place_in_zone(state, {wrong: center})
-    _o, _s, r, d, info = env_pen.step(jax.random.PRNGKey(1), st, _zero_action(env_pen), ep)
-    assert float(r) == -1.0 and bool(d) and bool(np.asarray(info["deadend"]))
-    _o, _s, r0, d0, info0 = env_off.step(jax.random.PRNGKey(1), st, _zero_action(env_off), ep)
-    assert float(r0) == 0.0 and not bool(d0) and not bool(np.asarray(info0["deadend"]))
-    # goal object in the zone still succeeds (+1) even if a distractor is there too
-    st2 = _place_in_zone(state, {right: center + np.array([-0.15, 0.0]), wrong: center + np.array([0.15, 0.0])})
-    _o, _s, r2, d2, info2 = env_pen.step(jax.random.PRNGKey(1), st2, _zero_action(env_pen), ep)
-    assert float(r2) == 1.0 and bool(d2) and bool(np.asarray(info2["GoalR"]))
+    # one distractor in: -0.3, non-terminal; second step same object: no repeat
+    st = _place_in_zone(state, {wrongs[0]: center})
+    _o, st, r, d, info = env_pen.step(jax.random.PRNGKey(1), st, _zero_action(env_pen), ep)
+    assert abs(float(r) + 0.3) < 1e-5 and not bool(d) and int(np.asarray(info["n_wrong_in_zone"])) == 1
+    _o, st, r2, d2, _i = env_pen.step(jax.random.PRNGKey(2), st, _zero_action(env_pen), ep)
+    assert float(r2) > -1e-5 and not bool(d2)
+    # penalty off: nothing
+    _o, _s, r0, d0, _i = env_off.step(jax.random.PRNGKey(1), _place_in_zone(state, {wrongs[0]: center}), _zero_action(env_off), ep)
+    assert float(r0) == 0.0 and not bool(d0)
+    # bulldoze everything in at once: +1 - 3*0.3 = 0.1, terminal success
+    st3 = _place_in_zone(state, {right: center, wrongs[0]: center + np.array([-0.3, 0.0]),
+                                 wrongs[1]: center + np.array([0.3, 0.0]), wrongs[2]: center + np.array([0.0, 0.3])})
+    _o, _s, r3, d3, info3 = env_pen.step(jax.random.PRNGKey(1), st3, _zero_action(env_pen), ep)
+    assert abs(float(r3) - 0.1) < 1e-5 and bool(d3) and bool(np.asarray(info3["GoalR"]))
+    # goal alone: exactly +1
+    _o, _s, r4, d4, _i = env_pen.step(jax.random.PRNGKey(1), _place_in_zone(state, {right: center}), _zero_action(env_pen), ep)
+    assert abs(float(r4) - 1.0) < 1e-5 and bool(d4)
