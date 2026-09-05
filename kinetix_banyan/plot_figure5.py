@@ -1,10 +1,10 @@
-"""Phase 5: recreate Figure 5 for the Kinetix substrate from the sweep runs.
+"""Recreate Figure 5 for the Kinetix substrate from a sweep group on W&B.
 
-Pulls the 4 fig5 runs from W&B (group kinetix-banyan-fig5), extracts eval
-histories + transfer metrics, renders the three panels, and logs everything
-back to W&B (figures as images, metrics as native panels, data as CSV).
+Pulls the finished runs of --group (one per |O|; --filter selects a subset by
+run-name substring, e.g. "nd0"), extracts eval histories + transfer metrics for
+the configured task depths, renders the panels, and logs them back to W&B.
 
-  python -m kinetix_banyan.plot_figure5 [--group kinetix-banyan-fig5]
+  python -m kinetix_banyan.plot_figure5 --group d1-v1 --filter nd0 --depths 1
 """
 
 from __future__ import annotations
@@ -25,36 +25,27 @@ PROJECT = "kinetix-banyan"
 PRELIM = "PRELIMINARY — 1 seed per point, Kinetix substrate. Pattern only. Not for publication."
 
 
-def fetch_runs(group: str):
+def fetch_runs(group: str, depths: tuple[int, ...], name_filter: str = ""):
     api = wandb.Api()
     runs = [
         r
         for r in api.runs(f"{ENTITY}/{PROJECT}", filters={"group": group})
-        if r.state == "finished"
+        if r.state == "finished" and name_filter in r.name and "transfer/delta_2" in r.summary
     ]
     out = []
     for r in runs:
         cfg = {k: v for k, v in r.config.items()}
         n_d1 = int(cfg.get("d1_num_instances", -1))
         summ = dict(r.summary)
-        hist = r.history(
-            keys=[
-                "timing/num_env_steps",
-                "round",
-                "eval/d1_success_depth1",
-                "eval/d1_success_depth2",
-                "eval/d2_success_depth1",
-                "eval/d2_success_depth2",
-            ],
-            pandas=False,
-        )
-        diag = r.history(
-            keys=[
-                "timing/num_env_steps",
-                "eval/d1_deadend_depth2",
-                "eval/d2_deadend_depth2",
-            ],
-            pandas=False,
+        succ_keys = [f"eval/{b}_success_depth{d}" for b in ("d1", "d2") for d in depths]
+        hist = r.history(keys=["timing/num_env_steps", "round", *succ_keys], pandas=False)
+        diag = (
+            r.history(
+                keys=["timing/num_env_steps", "eval/d1_deadend_depth2", "eval/d2_deadend_depth2"],
+                pandas=False,
+            )
+            if 2 in depths
+            else []
         )
         sel = r.history(
             keys=["timing/num_env_steps", "train/n_in_zone", "train/n_required_in_zone"],
@@ -77,22 +68,34 @@ def fetch_runs(group: str):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--group", default="kinetix-banyan-fig5")
-    ap.add_argument("--outdir", type=Path, default=Path("outputs/fig5"))
+    ap.add_argument("--group", default="d1-v1")
+    ap.add_argument("--filter", default="", help="run-name substring, e.g. nd0")
+    ap.add_argument("--depths", type=int, nargs="+", default=[1])
+    ap.add_argument("--outdir", type=Path, default=None)
+    ap.add_argument("--no-wandb", action="store_true")
     args = ap.parse_args()
+    depths = tuple(args.depths)
+    tag = f"{args.group}{'_' + args.filter if args.filter else ''}"
+    args.outdir = args.outdir or Path("outputs/fig5") / tag
     args.outdir.mkdir(parents=True, exist_ok=True)
 
-    runs = fetch_runs(args.group)
-    assert runs, f"no finished runs in group {args.group}"
+    runs = fetch_runs(args.group, depths, args.filter)
+    assert runs, f"no finished runs in group {args.group} matching {args.filter!r}"
     print(f"found {len(runs)} runs: |O| = {[d['n_d1'] for d in runs]}")
 
+    def _summ(d, key):
+        return float(d["summary"].get(key, np.nan))
+
     ns = [d["n_d1"] for d in runs]
-    delta2 = [float(d["summary"].get("transfer/delta_2", np.nan)) for d in runs]
-    delta2_d1 = [float(d["summary"].get("transfer/delta_2_depth1", np.nan)) for d in runs]
-    delta2_d2 = [float(d["summary"].get("transfer/delta_2_depth2", np.nan)) for d in runs]
-    b21 = [float(d["summary"].get("transfer/B_2_1", np.nan)) for d in runs]
-    b21_d1 = [float(d["summary"].get("transfer/B_2_1_depth1", np.nan)) for d in runs]
-    b21_d2 = [float(d["summary"].get("transfer/B_2_1_depth2", np.nan)) for d in runs]
+    delta2 = [_summ(d, "transfer/delta_2") for d in runs]
+    delta2_d1 = [_summ(d, "transfer/delta_2_depth1") for d in runs]
+    delta2_d2 = [_summ(d, "transfer/delta_2_depth2") for d in runs]
+    b21 = [_summ(d, "transfer/B_2_1") for d in runs]
+    b21_d1 = [_summ(d, "transfer/B_2_1_depth1") for d in runs]
+    b21_d2 = [_summ(d, "transfer/B_2_1_depth2") for d in runs]
+
+    def _mean_succ(row, bank):
+        return float(np.mean([row[f"eval/{bank}_success_depth{dd}"] for dd in depths]))
     overlaps = [int(d["summary"].get("diversity/d1_d2_overlap", d["run"].config.get("diversity/d1_d2_overlap", -1))) for d in runs]
     assert all(o == 0 for o in overlaps), f"d1/d2 overlap nonzero: {overlaps}"
 
@@ -105,24 +108,8 @@ def main():
         steps = np.array([row["timing/num_env_steps"] for row in h], dtype=float)
         rounds = np.array([row.get("round", 1) for row in h])
         # During round 1 the "current bank" is d1; during round 2 it's d2.
-        cur = np.array(
-            [
-                0.5
-                * (
-                    (row["eval/d1_success_depth1"] if row.get("round", 1) == 1 else row["eval/d2_success_depth1"])
-                    + (row["eval/d1_success_depth2"] if row.get("round", 1) == 1 else row["eval/d2_success_depth2"])
-                )
-                for row in h
-            ],
-            dtype=float,
-        )
-        d2s = np.array(
-            [
-                0.5 * (row["eval/d2_success_depth1"] + row["eval/d2_success_depth2"])
-                for row in h
-            ],
-            dtype=float,
-        )
+        cur = np.array([_mean_succ(row, "d1" if row.get("round", 1) == 1 else "d2") for row in h], dtype=float)
+        d2s = np.array([_mean_succ(row, "d2") for row in h], dtype=float)
         axes[0].plot(steps / 1e6, cur, color=color, label=f"|O|={d['n_d1']}")
         axes[1].plot(steps / 1e6, d2s, color=color, label=f"|O|={d['n_d1']}")
     boundary = float(runs[0]["run"].config.get("total_timesteps_d1", 1e8)) / 1e6
@@ -134,9 +121,9 @@ def main():
         ax.set_xlabel("env steps (M)")
         ax.set_title(title)
         ax.grid(alpha=0.3)
-    axes[0].set_ylabel("success rate (depths 1-2 avg)")
+    axes[0].set_ylabel(f"success rate (depths {','.join(map(str, depths))})")
     axes[0].legend()
-    fig.suptitle(f"Kinetix-Banyan: success vs steps (d1→d2 boundary at {boundary:.0f}M)\n{PRELIM}", fontsize=9)
+    fig.suptitle(f"Kinetix-Banyan [{tag}]: success vs steps (d1→d2 boundary at {boundary:.0f}M)\n{PRELIM}", fontsize=9)
     fig.tight_layout()
     p1 = args.outdir / "kinetix_figure5_success_vs_steps.png"
     fig.savefig(p1, dpi=150)
@@ -145,14 +132,15 @@ def main():
     # ---------- Panel 2: delta_2 vs |O| ----------
     fig, ax = plt.subplots(figsize=(5.5, 4.2))
     ax.plot(ns, delta2, "o-", label="Δ₂ (avg)")
-    ax.plot(ns, delta2_d1, "s--", alpha=0.6, label="Δ₂ depth-1")
-    ax.plot(ns, delta2_d2, "^--", alpha=0.6, label="Δ₂ depth-2")
+    if len(depths) > 1:
+        ax.plot(ns, delta2_d1, "s--", alpha=0.6, label="Δ₂ depth-1")
+        ax.plot(ns, delta2_d2, "^--", alpha=0.6, label="Δ₂ depth-2")
     ax.set_xscale("log")
     ax.set_xlabel("|O| (d1 object assignments)")
     ax.set_ylabel("Δ₂ = S_end(d1) − S_start(d2)")
     ax.grid(alpha=0.3)
     ax.legend()
-    ax.set_title(f"Forward-transfer gap vs diversity\n{PRELIM}", fontsize=8)
+    ax.set_title(f"Forward-transfer gap vs diversity [{tag}]\n{PRELIM}", fontsize=8)
     fig.tight_layout()
     p2 = args.outdir / "kinetix_figure5_delta2_vs_O.png"
     fig.savefig(p2, dpi=150)
@@ -161,14 +149,15 @@ def main():
     # ---------- Panel 3: B(2,1) vs |O| ----------
     fig, ax = plt.subplots(figsize=(5.5, 4.2))
     ax.plot(ns, b21, "o-", label="B(2,1) (avg)")
-    ax.plot(ns, b21_d1, "s--", alpha=0.6, label="depth-1")
-    ax.plot(ns, b21_d2, "^--", alpha=0.6, label="depth-2")
+    if len(depths) > 1:
+        ax.plot(ns, b21_d1, "s--", alpha=0.6, label="depth-1")
+        ax.plot(ns, b21_d2, "^--", alpha=0.6, label="depth-2")
     ax.set_xscale("log")
     ax.set_xlabel("|O| (d1 object assignments)")
     ax.set_ylabel("B(2,1) = S_end_final(d1) − S_end(d1)")
     ax.grid(alpha=0.3)
     ax.legend()
-    ax.set_title(f"Backward transfer vs diversity\n{PRELIM}", fontsize=8)
+    ax.set_title(f"Backward transfer vs diversity [{tag}]\n{PRELIM}", fontsize=8)
     fig.tight_layout()
     p3 = args.outdir / "kinetix_figure5_B21_vs_O.png"
     fig.savefig(p3, dpi=150)
@@ -221,12 +210,18 @@ def main():
         for i, d in enumerate(runs):
             w.writerow([ns[i], delta2[i], delta2_d1[i], delta2_d2[i], b21[i], b21_d1[i], b21_d2[i], overlaps[i], d["run"].id])
 
+    print("delta_2 by |O|:", dict(zip(ns, np.round(delta2, 3))))
+    print("B_2_1  by |O|:", dict(zip(ns, np.round(b21, 3))))
+    print(f"wrote {p1}, {p2}, {p3}, {csv_path}")
+    if args.no_wandb:
+        return
+
     # ---------- Log to W&B ----------
     run = wandb.init(
         entity=ENTITY,
         project=PROJECT,
         group=args.group,
-        name="figure5_plots",
+        name=f"figure5_plots_{tag}",
         notes=f"Figure-5 panels for the Kinetix substrate from group {args.group}. {PRELIM}",
         job_type="analysis",
     )
