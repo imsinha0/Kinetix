@@ -80,8 +80,7 @@ logger = get_logger()
 
 os.environ["WANDB_DISABLE_SERVICE"] = "True"
 
-RECIPE_LENGTH = 2  # banks contain depth-1 and depth-2 rows
-BANK_DEPTH_SETS = (("d1", 1), ("d1", 2), ("d2", 1), ("d2", 2))
+RECIPE_LENGTH = 2  # banks contain depth-1 and depth-2 rows; config.task_depths selects the ones used
 EVAL_LEVEL_SEEDS = {("d1", 1): 1001, ("d1", 2): 1002, ("d2", 1): 1003, ("d2", 2): 1004}
 EVAL_METRIC_NAMES = ("success", "deadend", "timeout", "ep_len", "n_in_zone_end")
 
@@ -156,14 +155,14 @@ def get_train_state_from_config(config, rng: jax.Array, env, env_params):
     return train_state
 
 
-def build_bank_level_states(base_state, constants, task_bank, depth, num_episodes, seed):
+def build_bank_level_states(base_state, constants, task_bank, depth, num_episodes, seed, num_distractors=0):
     """Fixed eval reset states: the depth-``depth`` rows of ``task_bank``,
     sampled via the vmapped reset fn with fixed PRNG keys."""
     depths = np.asarray(task_bank["depth"])
     (idx,) = np.nonzero(depths == depth)
     assert idx.size > 0, f"task bank has no depth-{depth} rows"
     sub_bank = {k: jnp.asarray(np.asarray(v)[idx]) for k, v in task_bank.items()}
-    reset_fn = make_banyan_reset_fn(base_state, constants, sub_bank)
+    reset_fn = make_banyan_reset_fn(base_state, constants, sub_bank, num_distractors=num_distractors)
     keys = jax.random.split(jax.random.PRNGKey(seed), num_episodes)
     return jax.vmap(reset_fn)(keys)
 
@@ -254,8 +253,16 @@ def make_video_eval_fn(eval_env, env_params, config, video_sets, video_fn):
     return video_eval
 
 
-def _bank_success(metrics, bank):
-    return 0.5 * (float(metrics[f"eval/{bank}_success_depth1"]) + float(metrics[f"eval/{bank}_success_depth2"]))
+def _bank_success(metrics, bank, depths):
+    """Bank success = mean over the configured task depths."""
+    return float(np.mean([float(metrics[f"eval/{bank}_success_depth{d}"]) for d in depths]))
+
+
+def _filter_bank_depths(bank, depths):
+    """Keep only the rows of ``bank`` whose depth is in ``depths``."""
+    keep = np.isin(np.asarray(bank["depth"]), np.asarray(depths))
+    assert keep.any(), f"task bank has no rows at depths {depths}"
+    return {k: jnp.asarray(np.asarray(v)[keep]) for k, v in bank.items()}
 
 
 def make_train(config, env_params, static_env_params, envs, full_sets, periodic_sets, video_sets):
@@ -824,8 +831,8 @@ def make_train(config, env_params, static_env_params, envs, full_sets, periodic_
         boundary_metrics = jax.device_get(full_eval_fn(_rng, runner_state.train_state, runner_state.extra["rms"]))
         protocol.append("boundary_eval")
         assert int(runner_state.update_step) == config["num_updates_d1"], "round-2 update ran before the boundary eval"
-        S_end_d1 = _bank_success(boundary_metrics, "d1")
-        S_start_d2 = _bank_success(boundary_metrics, "d2")
+        S_end_d1 = _bank_success(boundary_metrics, "d1", config["task_depths"])
+        S_start_d2 = _bank_success(boundary_metrics, "d2", config["task_depths"])
         _log_full_eval(
             boundary_metrics,
             {"boundary/S_end_d1": S_end_d1, "boundary/S_start_d2": S_start_d2},
@@ -863,15 +870,15 @@ def make_train(config, env_params, static_env_params, envs, full_sets, periodic_
         final_metrics = jax.device_get(full_eval_fn(_rng, runner_state.train_state, runner_state.extra["rms"]))
         protocol.append("final_eval")
 
-        S_end_d2 = _bank_success(final_metrics, "d2")
-        S_end_final_d1 = _bank_success(final_metrics, "d1")
+        S_end_d2 = _bank_success(final_metrics, "d2", config["task_depths"])
+        S_end_final_d1 = _bank_success(final_metrics, "d1", config["task_depths"])
         transfer = {
             "final/S_end_d2": S_end_d2,
             "final/S_end_final_d1": S_end_final_d1,
             "transfer/delta_2": S_end_d1 - S_start_d2,
             "transfer/B_2_1": S_end_final_d1 - S_end_d1,
         }
-        for depth in (1, 2):
+        for depth in config["task_depths"]:
             transfer[f"transfer/delta_2_depth{depth}"] = float(
                 boundary_metrics[f"eval/d1_success_depth{depth}"]
             ) - float(boundary_metrics[f"eval/d2_success_depth{depth}"])
@@ -924,9 +931,31 @@ def main(config):
     )
     overlap = int(meta["round_instance_overlap_count"])
     assert overlap == 0, f"d1/d2 instance overlap must be 0, got {overlap}"
+
+    # Restrict both banks to the configured task depths (e.g. [1] = single
+    # object, move-it-to-the-zone tasks only). Training resets, evals, the
+    # bank success aggregate and the transfer metrics all use these depths.
+    depths_used = tuple(int(d) for d in config["task_depths"])
+    assert depths_used and all(1 <= d <= RECIPE_LENGTH for d in depths_used), depths_used
+    config["task_depths"] = list(depths_used)
+    d1_bank = _filter_bank_depths(d1_bank, depths_used)
+    d2_bank = _filter_bank_depths(d2_bank, depths_used)
+    bank_depth_sets = tuple((bank, d) for bank in ("d1", "d2") for d in depths_used)
+
+    d1_goals = np.unique(np.asarray(d1_bank["goal_token"]))
+    d2_goals = np.unique(np.asarray(d2_bank["goal_token"]))
     config["diversity/n_d1"] = int(np.asarray(d1_bank["depth"]).shape[0])
     config["diversity/n_d2"] = int(np.asarray(d2_bank["depth"]).shape[0])
     config["diversity/d1_d2_overlap"] = overlap
+    config["diversity/d1_distinct_goal_tokens"] = int(d1_goals.size)
+    config["diversity/d2_distinct_goal_tokens"] = int(d2_goals.size)
+    config["diversity/d1_d2_goal_token_overlap"] = int(np.intersect1d(d1_goals, d2_goals).size)
+    config["diversity/round_leaf_overlap_count"] = int(meta["round_leaf_overlap_count"])
+    logger.info(
+        f"[BANKS] depths={depths_used} n_d1={config['diversity/n_d1']} n_d2={config['diversity/n_d2']} "
+        f"distinct goal tokens d1={d1_goals.size} d2={d2_goals.size} "
+        f"goal-token overlap={config['diversity/d1_d2_goal_token_overlap']}"
+    )
 
     rulebook = meta["global_rulebook"]
     base_state, static_env_params, env_params, constants = prepare_banyan_level(
@@ -963,7 +992,7 @@ def main(config):
     def _make_env(task_bank, level_base=None, level_constants=None):
         lb = base_state if level_base is None else level_base
         lc = constants if level_constants is None else level_constants
-        reset_fn = make_banyan_reset_fn(lb, lc, task_bank)
+        reset_fn = make_banyan_reset_fn(lb, lc, task_bank, num_distractors=int(config["num_distractors"]))
         return LogWrapper(
             make_banyan_env(
                 base_state=lb,
@@ -1001,16 +1030,22 @@ def main(config):
     assert config["eval_num_video_episodes"] <= config["eval_num_episodes_full"]
     full_sets = {
         (bank, depth): build_bank_level_states(
-            base_state, constants, banks[bank], depth, config["eval_num_episodes_full"], EVAL_LEVEL_SEEDS[(bank, depth)]
+            base_state,
+            constants,
+            banks[bank],
+            depth,
+            config["eval_num_episodes_full"],
+            EVAL_LEVEL_SEEDS[(bank, depth)],
+            num_distractors=int(config["num_distractors"]),
         )
-        for (bank, depth) in BANK_DEPTH_SETS
+        for (bank, depth) in bank_depth_sets
     }
     periodic_sets = {
         k: jax.tree.map(lambda x: x[: config["eval_num_episodes_periodic"]], v) for k, v in full_sets.items()
     }
     video_sets = {
         f"{bank}_depth{depth}": jax.tree.map(lambda x: x[: config["eval_num_video_episodes"]], full_sets[(bank, depth)])
-        for (bank, depth) in BANK_DEPTH_SETS
+        for (bank, depth) in bank_depth_sets
     }
 
     if config["use_wandb"]:

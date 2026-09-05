@@ -114,10 +114,18 @@ def test_reset_stamps_task(setup):
     state = reset_fn(jax.random.PRNGKey(3))
     row = int(_sc(state.task_id))
     types = np.asarray(state.circle_types)
-    bank_tokens = np.sort(np.asarray(d1_bank["leaf_token_ids"])[row])
-    assert (np.sort(types[list(OBJECT_SLOTS)]) == bank_tokens).all()
+    active = np.asarray(state.circle.active)
+    req = np.asarray(d1_bank["required_leaf_mask"])[row]
+    bank_tokens = np.asarray(d1_bank["leaf_token_ids"])[row]
+    slots = np.asarray(OBJECT_SLOTS)
+    # Single tree per episode: exactly the tree's leaves are active and typed;
+    # the bank's distractor slots are inactive and untyped.
+    assert (active[slots] == req).all()
+    assert (types[slots[req]] == bank_tokens[req]).all()
+    assert (types[slots[~req]] == -1).all()
     assert types[BILLBOARD_IDX] == int(np.asarray(d1_bank["goal_token"])[row])
     depth = int(_sc(state.task_depth))
+    assert int(active[slots].sum()) == depth  # 1 object at depth 1, 2 at depth 2
     if depth == 1:
         assert int(_sc(state.required_lhs)) == -1
     else:
@@ -161,12 +169,15 @@ def test_depth1_goal_in_zone_succeeds(setup):
     assert bool(np.asarray(info["GoalR"]))
 
 
-def test_depth1_wrong_object_no_reward(setup):
+def test_depth1_single_object_and_inactive_slot_no_reward(setup):
     env, env_params = setup["env"], setup["env_params"]
     state = _fresh_depth_state(setup, 1)
-    goal = int(_sc(state.goal_token))
     types = np.asarray(state.circle_types)
-    wrong_slot = [s for s in OBJECT_SLOTS if types[s] != goal and types[s] >= 0][0]
+    active = np.asarray(state.circle.active)
+    assert sum(bool(active[s]) for s in OBJECT_SLOTS) == 1
+    assert types[[s for s in OBJECT_SLOTS if active[s]][0]] == int(_sc(state.goal_token))
+    # An inactive (distractor) slot dragged into the zone must not count.
+    wrong_slot = [s for s in OBJECT_SLOTS if not active[s]][0]
     state = _place_in_zone(state, {wrong_slot: _zone_center(setup["constants"])})
     _obs, _st, reward, done, _info = env.step(jax.random.PRNGKey(1), state, _zero_action(env), env_params)
     assert float(reward) == 0.0 and not bool(done)
@@ -209,8 +220,9 @@ def test_depth2_valid_but_not_required_pair_deadends(setup):
     other = [
         (int(a), int(b)) for a, b in zip(lhs_arr, rhs_arr) if (int(a), int(b)) != req
     ][0]
-    # stamp two object slots with the other rule's pair (synthetic scene)
-    slots = list(OBJECT_SLOTS)[:2]
+    # stamp the two active object slots with the other rule's pair (synthetic scene)
+    slots = [s for s in OBJECT_SLOTS if bool(np.asarray(state.circle.active)[s])]
+    assert len(slots) == 2
     circle_types = state.circle_types.at[slots[0]].set(other[0]).at[slots[1]].set(other[1])
     state = state.replace(circle_types=circle_types)
     center = _zone_center(constants)
@@ -238,7 +250,8 @@ def test_depth2_invalid_pair_nothing(setup):
                 break
         if pair:
             break
-    slots = list(OBJECT_SLOTS)[:2]
+    slots = [s for s in OBJECT_SLOTS if bool(np.asarray(state.circle.active)[s])]
+    assert len(slots) == 2
     circle_types = state.circle_types.at[slots[0]].set(pair[0]).at[slots[1]].set(pair[1])
     state = state.replace(circle_types=circle_types)
     center = _zone_center(constants)
@@ -338,11 +351,9 @@ def test_event_shaping_bonuses_fire_once_and_are_nonterminal(setup):
     _o, state, r4, d4_, _i = env_shaped.step(jax.random.PRNGKey(4), state, _zero_action(env_shaped), ep)
     assert float(r4) <= 1e-5 and not bool(d4_)
 
-    # Distractor object lifted: NO bonus.
+    # Inactive (distractor) slot lifted: NO bonus.
     state2 = _fresh_depth_state(setup, 2)
-    types2 = np.asarray(state2.circle_types)
-    lhs2, rhs2 = int(_sc(state2.required_lhs)), int(_sc(state2.required_rhs))
-    distractor = [s for s in OBJECT_SLOTS if types2[s] >= 0 and types2[s] not in (lhs2, rhs2)][0]
+    distractor = [s for s in OBJECT_SLOTS if not bool(np.asarray(state2.circle.active)[s])][0]
     circle2 = state2.circle
     circle2 = circle2.replace(
         position=circle2.position.at[distractor].set(jnp.asarray([2.0, lip_top + 0.3])),
@@ -410,8 +421,8 @@ def test_height_potential_pays_only_new_max_of_required(setup):
     state = raise_to(state, h0 + 0.28)
     _o, state, r3, _d, _i = env_h.step(jax.random.PRNGKey(3), state, _zero_action(env_h), ep)
     assert float(r3) <= 1e-4
-    # Distractor raised: nothing.
-    distractor = [s for s in OBJECT_SLOTS if types[s] >= 0 and types[s] not in (lhs, rhs)][0]
+    # Inactive (distractor) slot raised: nothing.
+    distractor = [s for s in OBJECT_SLOTS if not bool(np.asarray(state.circle.active)[s])][0]
     c = state.circle
     c = c.replace(
         position=c.position.at[distractor].set(jnp.asarray([2.4, h0 + 0.5])),
@@ -431,3 +442,24 @@ def test_vmapped_reset_and_step(setup):
     _obs, next_states, rewards, dones, _info = step(keys, states, actions, env_params)
     assert next_states.circle_types.shape == (8, setup["static"].num_circles)
     assert not np.asarray(dones).any()
+
+
+def test_num_distractors_activates_extra_bank_slots(setup):
+    d1_bank = setup["d1_bank"]
+    for k in (1, 3):
+        reset_k = make_banyan_reset_fn(setup["base"], setup["constants"], d1_bank, num_distractors=k)
+        for seed in range(6):
+            state = reset_k(jax.random.PRNGKey(seed))
+            row = int(_sc(state.task_id))
+            req = np.asarray(d1_bank["required_leaf_mask"])[row]
+            active = np.asarray(state.circle.active)[list(OBJECT_SLOTS)]
+            types = np.asarray(state.circle_types)[list(OBJECT_SLOTS)]
+            bank_tokens = np.asarray(d1_bank["leaf_token_ids"])[row]
+            assert (active[req]).all()
+            assert int(active.sum()) == int(req.sum()) + min(k, NUM_OBJECT_SLOTS - int(req.sum()))
+            # every active slot carries the bank's token for that slot; inactive are untyped
+            assert (types[active] == bank_tokens[active]).all()
+            assert (types[~active] == -1).all()
+            # distractor types are never the goal type
+            goal = int(_sc(state.goal_token))
+            assert all(types[i] != goal for i in range(NUM_OBJECT_SLOTS) if active[i] and not req[i])

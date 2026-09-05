@@ -23,11 +23,21 @@ misc:
   video_frequency: 10
 
 # --- Banyan task banks (built once via banyan-grid's build_d1_d2_task_banks) ---
+# Each episode is ONE task tree; only its leaves are spawned (no distractors).
+# task_depths selects which tree depths are trained/evaluated: [1] = single
+# object, carry it to the zone; [1, 2] adds the two-object merge tasks.
+task_depths: [1]
+# Extra distractor objects (bank types never useful for the current tree)
+# spawned per episode, 0..3. 0 = single tree only.
+num_distractors: 0
 d1_num_instances: 1
 d2_num_instances: 1000
 id_vocab_size: 120
 task_seed: 123
-object_condition: shared
+# disjoint: d1 and d2 draw from non-overlapping halves of the object vocab, so
+# every round-2 object is novel. (With 'shared' and a 120-token vocab, a large
+# d1 bank already covers every object type and d2 holds nothing new.)
+object_condition: disjoint
 
 # --- Level v2 (anti-bulldozer lip + horizon) ---
 # lip_height: fixated wall on the platform's left edge; objects must be
@@ -40,7 +50,9 @@ lip_height: 0.55
 # Round-1 training lip (curriculum): set lower/0 to give exploration an
 # on-ramp; round 2 and ALL evals always use lip_height. Default: no curriculum.
 lip_height_round1: 0.55
-max_timesteps: 512
+# Stock Kinetix horizon. The 512 deviation was only needed for the two-delivery
+# depth-2 chain; a single delivery fits 256 steps.
+max_timesteps: 256
 null_policy_floor: -1.0
 
 # --- First-time event shaping (user-approved deviation from pure sparse) ---
@@ -65,7 +77,7 @@ total_timesteps_d1: 50000000
 total_timesteps_d2: 50000000
 
 # --- Banyan eval: N fixed episodes per (bank x depth) ---
-eval_freq: 64
+eval_freq: 16
 eval_temperature: 0.0001
 eval_num_episodes_periodic: 128
 eval_num_episodes_full: 512

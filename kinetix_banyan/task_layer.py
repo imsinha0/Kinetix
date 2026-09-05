@@ -3,9 +3,12 @@
 Reuses Kinetix's PPO, Jax2D physics, the ``l/grasp_easy`` arm level, and the
 entity observation/rendering stack unchanged. Replaces ONLY the goal logic:
 
-  * 4 typed objects (circles) are placed in the scene per episode, with types
-    drawn from a Banyan task bank (built by banyan-grid's
-    ``build_d1_d2_task_banks`` — same trees, same |O| sweep as Point Mass).
+  * Each episode is ONE Banyan task tree (as in Banyan proper): exactly the
+    tree's leaves are spawned as typed objects (circles) — one object at
+    depth 1, two at depth 2 — with types drawn from a Banyan task bank (built
+    by banyan-grid's ``build_d1_d2_task_banks``; same trees, same |O| sweep
+    as Point Mass). ``num_distractors`` extra bank distractor objects (types
+    never useful for the current tree) can be spawned alongside; default 0.
   * The fixated platform of grasp_easy (the stock "blue goal") becomes the
     COMBINE ZONE: a region above it, read directly by the reward function.
     Merges fire only when two objects are inside the zone simultaneously —
@@ -275,9 +278,13 @@ def make_banyan_reset_fn(
     base_state: BanyanEnvState,
     constants: BanyanTaskConstants,
     task_bank: dict[str, jnp.ndarray],
+    num_distractors: int = 0,
 ) -> Callable[[chex.PRNGKey], BanyanEnvState]:
-    """Per-episode: sample a bank row, shuffle objects over spawn spots, and
-    stamp types/goal/required-rule onto the base level. Fully vmappable.
+    """Per-episode: sample a bank row, shuffle the tree's leaf objects over the
+    spawn spots, and stamp types/goal/required-rule onto the base level.
+    Fully vmappable. ``num_distractors`` of the bank's non-required (distractor)
+    slots are activated per episode (chosen at random when fewer than
+    available); 0 = the tree's leaves only.
 
     ``task_bank`` needs: leaf_token_ids (N, NUM_OBJECT_SLOTS), goal_token (N,),
     required_rule_lhs / required_rule_rhs (N, R>=1), required_rule_valid
@@ -285,6 +292,7 @@ def make_banyan_reset_fn(
     """
     n_tasks = int(task_bank["depth"].shape[0])
     leaf_tokens = jnp.asarray(task_bank["leaf_token_ids"], dtype=jnp.int32)
+    required_mask = jnp.asarray(task_bank["required_leaf_mask"], dtype=jnp.bool_)
     assert leaf_tokens.shape[1] == NUM_OBJECT_SLOTS, (
         f"bank built with num_leaf_slots={leaf_tokens.shape[1]}, "
         f"scene has {NUM_OBJECT_SLOTS} object slots"
@@ -297,12 +305,21 @@ def make_banyan_reset_fn(
     task_ids = jnp.asarray(task_bank["task_id"], dtype=jnp.int32)
     obj = jnp.asarray(OBJECT_SLOTS)
 
+    num_distractors = int(num_distractors)
+    assert 0 <= num_distractors < NUM_OBJECT_SLOTS, num_distractors
+
     def reset(rng: chex.PRNGKey) -> BanyanEnvState:
-        rng_task, rng_perm = jax.random.split(rng)
+        rng_task, rng_perm, rng_dis = jax.random.split(rng, 3)
         row = jax.random.randint(rng_task, (), 0, n_tasks)
 
-        tokens = leaf_tokens[row]
-        active = tokens >= 0
+        # Single tree per episode: the tree's own (required) leaves are always
+        # spawned, plus up to ``num_distractors`` of the bank's distractor
+        # slots (random subset). Everything else stays inactive and untyped.
+        required = required_mask[row]
+        score = jax.random.uniform(rng_dis, (NUM_OBJECT_SLOTS,)) + required  # required rank last
+        rank = jnp.argsort(jnp.argsort(score))
+        active = required | ((~required) & (rank < num_distractors))
+        tokens = jnp.where(active, leaf_tokens[row], -1)
         perm = jax.random.permutation(rng_perm, NUM_OBJECT_SLOTS)
         positions = constants.spawn_positions[perm]
 
