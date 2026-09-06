@@ -197,3 +197,5 @@ d1-v4 seed 3 boundaries: o1 1.000/0.812 (0.19), o10 0.775/0.781 (−0.01, "0.78-
 | 100 | 0.016, 0.080, 0.010, 0.031 | **0.034** | ≈0 |
 | 1000 | 0.039, 0.049, 0.035, 0.047 | **0.042** | ≈0 |
 Depth-1 Figure 5 on Kinetix: Δ₂ ≈ 0.23–0.25 at |O| ≤ 10 vs ≈ 0.04 at |O| ≥ 100 (6× smaller), B(2,1) ≈ 0 throughout. The one outlier (o10_s3, Δ₂≈0) is a weak learner that never left the 0.78 plateau on d1 either. Depth 2 (seed 0) shows the same shape with a larger low-|O| gap (0.66) and positive B(2,1) growing with |O|.
+
+### Batch d12-v1 (submitted 2026-09-06 02:10) — **mixed depths [1,2]** (the paper's protocol: banks contain both depths, success averaged over depths), lip 0, 1 distractor, terminal 0.3, 100M+100M, seed 0, |O| ∈ {1,10,100,1000}: d12_o{O}_nd1_t03_s0.
