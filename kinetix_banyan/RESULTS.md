@@ -145,3 +145,15 @@ v3 finished (non-terminal, identity-insensitive success): Δ₂ = 0.008–0.025 
 
 ### Batch d2-v1 (submitted 2026-09-05 22:40, SLURM 44713222-44713235) — **depth 2 only** (`task_depths=[2]`), lip 0, 1 distractor, terminal `reward_wrong_deposit=0.3`, 100M+100M, seed 0
 Episode = 3 objects (the tree's two leaves + 1 distractor); success = both leaves in the zone; distractor in zone → terminal −0.3; a globally-valid-but-not-required pair → −1 (structural dead-end). d2 bank = novel objects AND novel rules. |O| ∈ {1, 10, 100, 1000}: d2_o{O}_nd1_t03_s0. Terminal penalty generalised to all depths (commit c0694bb, 21 tests pass). Cancelled the NaN-dead d1v4-o1-s1.
+
+#### First Kinetix Figure 5 (interim, 5 finished d1-v4 runs, 2026-09-05 23:20) — `outputs/fig5/d1-v4/`
+| |O| | seed | S_end(d1) | S_start(d2) | Δ₂ | B(2,1) |
+|---|---|---|---|---|---|
+| 1 | 0 | 1.000 | 0.812 | 0.188 | 0.000 |
+| 10 | 0 | 0.998 | 0.732 | 0.266 | 0.000 |
+| 10 | 1 | 1.000 | 0.516 | 0.484 | −0.006 |
+| 100 | 0 | 0.828 | 0.812 | 0.016 | 0.000 |
+| 1000 | 0 | 0.852 | 0.812 | 0.039 | −0.002 |
+Still running: o1000_s1 (boundary 0.957/0.908 → Δ₂=0.049; then NaN-died in round 2, old code), o100_s1 (0.990/0.910 → Δ₂=0.080), o1_s2 (1.000/0.693 → Δ₂=0.307), o1000_s2, o100_s2 (~90M).
+B(2,1) ≈ 0 everywhere at depth 1 (d1 stays mastered), consistent with the paper's small backward effect on the object axis.
+* o10_s2 (new code) is a genuine non-learner, not NaN: episode length 256, nothing ever reaches the zone, return ≈0.09 (shaping only), entropy decays → passive policy after early dead-ends (deadend_rate 0.17 at 15M). Terminal −0.3 can still induce avoidance in some seeds (1 of 8 new-code runs so far).
