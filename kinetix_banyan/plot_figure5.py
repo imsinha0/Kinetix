@@ -104,7 +104,12 @@ def main():
     delta2 = [_summ(d, "transfer/delta_2") for d in runs]
     delta2_d1 = [_summ(d, "transfer/delta_2_depth1") for d in runs]
     delta2_d2 = [_summ(d, "transfer/delta_2_depth2") for d in runs]
-    b21 = [_summ(d, "transfer/B_2_1") for d in runs]
+    # B(2,1) is meaningless for runs that died (NaN) during round 2; Δ₂ (boundary) is still valid.
+    def _b21(d):
+        dead_r2 = _summ(d, "final/S_end_d2") < 0.05 and _summ(d, "final/S_end_final_d1") < 0.05
+        return np.nan if dead_r2 else _summ(d, "transfer/B_2_1")
+
+    b21 = [_b21(d) for d in runs]
     b21_d1 = [_summ(d, "transfer/B_2_1_depth1") for d in runs]
     b21_d2 = [_summ(d, "transfer/B_2_1_depth2") for d in runs]
 
