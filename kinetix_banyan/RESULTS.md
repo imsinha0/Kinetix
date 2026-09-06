@@ -187,3 +187,4 @@ Depth 2 gives the sharpest picture yet: a 0.66 gap at |O|=1 collapsing to ≈0 b
 | 1000 | 0.727 | 0.744 | 0.949 | 0.951 | −0.018 | 0.225 |
 Depth 2 reproduces the paper's Figure-5 shape cleanly: Δ₂ collapses from 0.66 to ≈0 once |O| ≥ 10. Backward transfer is positive and grows with |O| (0.05 → 0.25): round-2 training on novel objects/rules *improves* d1 at high diversity. Seed 1 at 99M agrees at |O|=1 (0.906/0.242 → 0.66).
 d1-v4 seed 3 boundaries: o1 1.000/0.812 (0.19), o10 0.775/0.781 (−0.01, "0.78-mode" seed), o100 0.830/0.799 (0.03), o1000 0.850/0.803 (0.05).
+* Depth-2 |O|=1 held-out curve: d2 success *falls* during round 1 (≈0.5 at 60M → 0.29 at the boundary) while d1 is being mastered — overfitting to the single task with its fixed object codes; the higher-|O| runs' d2 curves rise monotonically. Round 2 then recovers |O|=1 to 0.99. Depth-2 figures sent to the user (seed 0).
