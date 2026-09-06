@@ -128,3 +128,17 @@ Caveat: d2 success saturates at 0.812 (104/128 fixed episodes) in several runs �
 #### Root cause of the sudden collapses (2026-09-05 22:05) — FIXED
 Every collapse (v1 o10_nd3, v2 ×5, v3 ×5, v4 o1_s1) is the same event: in one update `episode_return`, `loss/*`, `grad_norm` and `param_norm` all turn NaN simultaneously and never recover. The reward goes NaN first → the source is the environment: a physics blow-up (violent flinging) makes positions NaN; the shaping terms (height potential, distance) propagate NaN into the reward; one PPO step makes the parameters NaN. Stock Kinetix only terminated NaN episodes, it never sanitised the reward.
 Fix (commit "NaN guard"): reward := 0 on physics-NaN steps, infos nan_to_num'd, `train/physics_nan_rate` logged, and `optax.zero_nans()` in the optimizer chain so a NaN gradient skips the update. Test added. Seed-2 v4 jobs cancelled and resubmitted on the fixed code (44707099-44707102); seeds 0/1 (old code, ~95M) left running — o1_s1 is already dead.
+
+#### d1-v4 boundary (2026-09-05 22:20)
+| |O| | seed | S_end(d1) | S_start(d2) | Δ₂ |
+|---|---|---|---|---|
+| 1 | 0 | 1.000 | 0.812 | 0.188 |
+| 1 | 1 | NaN-dead (old code) | | – |
+| 1 | 2 (30M, new code) | 1.000 | 0.320 | (0.68 so far) |
+| 10 | 0 | 0.998 | 0.732 | 0.266 |
+| 10 | 1 | 1.000 | 0.516 | 0.484 |
+| 100 | 0 | 0.828 | 0.812 | 0.016 |
+| 100 | 1 (89M) | 0.977 | 0.875 | (0.10 so far) |
+| 1000 | 0 | 0.852 | 0.812 | 0.040 |
+Δ₂ ≈ 0.19–0.48 at |O| ≤ 10, ≈ 0.02–0.10 at |O| ≥ 100 → **Figure-5 pattern on Kinetix**. Round 2 lifts d2 at |O|=10 to 0.91–0.94 (plasticity present), unlike the frozen |O|=1 v2 run — so 0.812 was not an eval ceiling.
+v3 finished (non-terminal, identity-insensitive success): Δ₂ = 0.008–0.025 everywhere, as predicted; not usable for the figure.
