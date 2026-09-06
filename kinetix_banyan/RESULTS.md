@@ -245,3 +245,14 @@ Full mixed-depth curve: Δ₂ = 0.54 (1) → 0.12 (3) → 0.02 (10) → 0.02 (30
 
 ### Batch d12-long (submitted 2026-09-06 08:05) — same recipe, **300M round 1** + 100M round 2, |O| ∈ {100, 1000}, seeds 0–1
 Checks the caveat that the small high-|O| gap might partly reflect low round-1 mastery (0.3–0.85 at 100M): with a 3× longer round 1, does Δ₂ stay ≈0 as mastery rises?
+
+#### 2026-09-06 12:15 — d12-long FINISHED (300M round 1 + 100M round 2, mixed depths) — caveat resolved
+| |O| | seed | S_end(d1) | S_start(d2) | Δ₂ | B(2,1) |
+|---|---|---|---|---|---|
+| 100 | 0 | 0.779 | 0.755 | 0.024 | 0.074 |
+| 100 | 1 | 0.830 | 0.811 | 0.020 | 0.004 |
+| 1000 | 0 | 0.815 | 0.820 | −0.005 | 0.017 |
+| 1000 | 1 | 0.903 | 0.876 | 0.027 | −0.011 |
+With 3× the round-1 budget, high-|O| mastery rises to 0.78–0.90 (from 0.29–0.85 at 100M) and Δ₂ stays ≤ 0.03. The near-zero forward gap at high diversity is genuine transfer, not an artefact of under-training. B(2,1) shrinks toward 0 once round 1 is long enough to master the bank.
+
+**Autoresearch stopped here (user request, 2026-09-06).** Deliverables: figures + CSVs in `outputs/fig5/{d1-v4,d2-v1,d12-v1}/`, W&B runs `figure5_plots_*` in project kinetix-banyan, this log, and the `banyan` git branch.
