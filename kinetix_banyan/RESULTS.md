@@ -124,3 +124,7 @@ Grasp arm (lip 0.55 + `reward_goal_distance_scale=0.2`) implemented and tested, 
 | 1000 | 1 | queued | | |
 Gap ≈0.2–0.5 at |O|≤10, ≈0.06–0.09 at |O|≥100; d1 mastery lower at high |O| (0.86–0.91 vs 1.0), as in the paper.
 Caveat: d2 success saturates at 0.812 (104/128 fixed episodes) in several runs → part of the residual high-|O| gap may be a layout ceiling of the fixed d2 eval set, not transfer. v3 non-terminal o1000_nd1 / o100_nd1 (100% at boundary) collapsed to 0 during round 2 → cancelled; queued seed 2 for all four |O| of v4.
+
+#### Root cause of the sudden collapses (2026-09-05 22:05) — FIXED
+Every collapse (v1 o10_nd3, v2 ×5, v3 ×5, v4 o1_s1) is the same event: in one update `episode_return`, `loss/*`, `grad_norm` and `param_norm` all turn NaN simultaneously and never recover. The reward goes NaN first → the source is the environment: a physics blow-up (violent flinging) makes positions NaN; the shaping terms (height potential, distance) propagate NaN into the reward; one PPO step makes the parameters NaN. Stock Kinetix only terminated NaN episodes, it never sanitised the reward.
+Fix (commit "NaN guard"): reward := 0 on physics-NaN steps, infos nan_to_num'd, `train/physics_nan_rate` logged, and `optax.zero_nans()` in the optimizer chain so a NaN gradient skips the update. Test added. Seed-2 v4 jobs cancelled and resubmitted on the fixed code (44707099-44707102); seeds 0/1 (old code, ~95M) left running — o1_s1 is already dead.
