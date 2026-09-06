@@ -22,7 +22,7 @@ import wandb
 
 ENTITY = "imsinha-harvard-university"
 PROJECT = "kinetix-banyan"
-PRELIM = "PRELIMINARY — 1 seed per point, Kinetix substrate. Pattern only. Not for publication."
+PRELIM = "PRELIMINARY — Kinetix substrate, few seeds. Pattern only. Not for publication."
 
 
 def fetch_runs(group: str, depths: tuple[int, ...], name_filter: str = ""):
