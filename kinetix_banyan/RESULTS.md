@@ -199,3 +199,13 @@ d1-v4 seed 3 boundaries: o1 1.000/0.812 (0.19), o10 0.775/0.781 (−0.01, "0.78-
 Depth-1 Figure 5 on Kinetix: Δ₂ ≈ 0.23–0.25 at |O| ≤ 10 vs ≈ 0.04 at |O| ≥ 100 (6× smaller), B(2,1) ≈ 0 throughout. The one outlier (o10_s3, Δ₂≈0) is a weak learner that never left the 0.78 plateau on d1 either. Depth 2 (seed 0) shows the same shape with a larger low-|O| gap (0.66) and positive B(2,1) growing with |O|.
 
 ### Batch d12-v1 (submitted 2026-09-06 02:10) — **mixed depths [1,2]** (the paper's protocol: banks contain both depths, success averaged over depths), lip 0, 1 distractor, terminal 0.3, 100M+100M, seed 0, |O| ∈ {1,10,100,1000}: d12_o{O}_nd1_t03_s0.
+
+#### 2026-09-06 03:10 — d2-v1 all 12 runs finished; d12-v1 (mixed depths) seed 0 finished
+**d12-v1 (task_depths=[1,2], success averaged over depths), seed 0**:
+| |O| | S_end(d1) | S_start(d2) | Δ₂ (avg) | Δ₂ depth1 | Δ₂ depth2 | B(2,1) | B depth2 |
+|---|---|---|---|---|---|---|---|
+| 1 | 0.856 | 0.362 | **0.494** | 0.475 | 0.514 | 0.046 | 0.092 |
+| 10 | 0.611 | 0.617 | −0.006 | −0.012 | 0.000 | 0.199 | 0.383 |
+| 100 | 0.673 | 0.675 | −0.002 | 0.021 | −0.025 | 0.118 | 0.236 |
+| 1000 | 0.293 | 0.298 | −0.005 | −0.004 | −0.006 | 0.033 | 0.035 |
+Same shape under the paper's mixed-depth protocol: Δ₂ ≈ 0.5 at |O|=1, ≈ 0 for |O| ≥ 10; B(2,1) positive at |O|=10–100 (driven by depth 2). |O|=1000 is a slow learner here (0.29 after 100M; 2000 bank rows) — the paper's "more diversity → lower mastery in a fixed budget" effect, exaggerated. Queued seeds 1 and 2 (d12v1-o{O}-s{1,2}).
