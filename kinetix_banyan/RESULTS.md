@@ -109,3 +109,4 @@ Distractor in zone → terminal −1 (dead-end). Type-blind bulldozing now fails
 Expected: bulldoze pays 0.5·1 − 0.5·0.3 = +0.35 (approach not extinguished); selecting pays +1. Success = goal object enters before the distractor.
 |O| ∈ {1, 10, 100, 1000} × seed ∈ {0, 1}: o{O}_nd1_t03_s{seed}. Two jobs queued behind the per-user GPU cap.
 Grasp arm (lip 0.55 + `reward_goal_distance_scale=0.2`) implemented and tested, to launch when GPUs free.
+* **v2 o1_nd1 terminal −1 (l1vy1de4) FINISHED**: S_end(d1)=1.000, S_start(d2)=0.812, S_end(d2)=0.812, S_end_final(d1)=1.000 → **Δ₂=0.188, B(2,1)=0.000**. Notably d2 success did not move at all during 100M steps of round-2 training (train success on d2 ≈0.80): the |O|=1 policy is frozen — no plasticity for the novel objects. First complete data point of the figure (|O|=1).
