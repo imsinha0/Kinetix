@@ -143,6 +143,7 @@ def get_train_state_from_config(config, rng: jax.Array, env, env_params):
     else:
         lr_to_use = config["lr"]
     tx = optax.chain(
+        optax.zero_nans(),  # a NaN gradient (e.g. from a physics blow-up) skips the update instead of killing the run
         optax.clip_by_global_norm(config["max_grad_norm"]),
         optax.adam(lr_to_use, eps=1e-5),
     )
@@ -623,6 +624,7 @@ def make_train(config, env_params, static_env_params, envs, full_sets, periodic_
                         "train/n_in_zone": (raw_info["n_in_zone"] * dones).sum() / denom,
                         "train/n_required_in_zone": (raw_info["n_required_in_zone"] * dones).sum() / denom,
                         "train/task_depth": (raw_info["task_depth"] * dones).sum() / denom,
+                        "train/physics_nan_rate": (raw_info["physics_nan"] * dones).sum() / denom,
                         **metrics_to_log,
                     }
                     to_log["round"] = round_idx

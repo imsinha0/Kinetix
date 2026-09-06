@@ -587,3 +587,16 @@ def test_wrong_deposit_terminal_mode(setup):
     st = _place_in_zone(state, {right: center + np.array([-0.15, 0.0]), wrongs[0]: center + np.array([0.15, 0.0])})
     _o, _s, r2, d2, info2 = env_t.step(jax.random.PRNGKey(1), st, _zero_action(env_t), ep)
     assert bool(d2) and bool(np.asarray(info2["GoalR"])) and abs(float(r2) - 0.7) < 1e-5  # +1 minus the 0.3 charged for the distractor
+
+
+def test_physics_nan_terminates_with_zero_reward(setup):
+    env, ep = setup["env"], setup["env_params"]
+    state = _fresh_depth_state(setup, 1)
+    goal_slot = [s for s in OBJECT_SLOTS if int(np.asarray(state.circle_types)[s]) == int(_sc(state.goal_token))][0]
+    c = state.circle.replace(position=state.circle.position.at[goal_slot].set(jnp.asarray([jnp.nan, jnp.nan])))
+    st = state.replace(circle=c)
+    _o, next_state, r, d, info = env.step(jax.random.PRNGKey(1), st, _zero_action(env), ep)
+    assert bool(d) and float(r) == 0.0 and not np.isnan(float(r))
+    assert bool(np.asarray(info["physics_nan"]))
+    # auto-reset delivered a clean state
+    assert not bool(np.isnan(np.asarray(next_state.circle.position)).any())

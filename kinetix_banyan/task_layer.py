@@ -580,14 +580,23 @@ class BanyanKinetixEnv(KinetixEnv):
         csum = jnp.cumsum(rewards)
         reward = jax.lax.select(has_terminal, csum[first_terminal_index], csum[-1])
 
-        done = has_terminal | jax.tree.reduce(
+        # Physics blow-up guard: a NaN anywhere in the state ends the episode
+        # (stock Kinetix behaviour) AND zeroes the reward. Without this, NaN
+        # positions flow through the shaping terms into the reward, one PPO
+        # update turns the parameters NaN, and the run is dead for good
+        # (observed in 6+ runs as sudden permanent collapse to 0% success).
+        physics_nan = jax.tree.reduce(
             jnp.logical_or, jax.tree.map(lambda x: jnp.isnan(x).any(), env_state), False
         )
+        reward = jnp.where(physics_nan | jnp.isnan(reward), 0.0, reward)
+        done = has_terminal | physics_nan
         done |= env_state.timestep >= env_params.max_timesteps
 
         info = jax.tree.map(
             lambda x: jax.lax.select(has_terminal, x[first_terminal_index], x[-1]), infos
         )
+        info = jax.tree.map(lambda x: jnp.nan_to_num(x) if jnp.issubdtype(x.dtype, jnp.floating) else x, info)
+        info["physics_nan"] = physics_nan
 
         return (
             jax.lax.stop_gradient(self.get_obs(env_state)),
