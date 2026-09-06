@@ -99,3 +99,13 @@ Distractor in zone → terminal −1 (dead-end). Type-blind bulldozing now fails
 | 44684030 | o10_nd3_p03 | 10 | 3 |
 | 44684031 | o100_nd3_p03 | 100 | 3 |
 | 44684033 | o1000_nd3_p03 | 1000 | 3 |
+
+#### d1-v3 at ~75M / d1-v2 survivor at boundary (2026-09-05 20:55)
+* **v2 o1_nd1 terminal −1 (l1vy1de4)** reached the boundary: S_end(d1)=1.000, S_start(d2)=0.812 → **Δ₂=0.19 at |O|=1** (first real forward gap). Video: arm reaches down and sweeps the right object onto the platform. Round 2 running.
+* **v3 non-terminal p=0.3**: untrained greedy floor is already 0.7–0.98 (success no longer needs selectivity), so success rate cannot show identity use. Learned runs: o1000_nd1 100/100 (train return ≈1.03, n_in_zone≈1.09 → it *is* selective: distractor enters only ~9% of episodes, and this generalises to novel objects), o100_nd1 100/100, o10_nd1 100/99, o100_nd3 77/73 (flat, bulldozing), o1_nd3 ~0.75. **3 of 8 collapsed to 0% by 5–30M** (o1_nd1, o10_nd3, o1000_nd3) — agent stops interacting; seed-level instability, not |O|-related. Cancelled those and the two lip-0.25 runs (≤8%, no learning).
+* Reading: a *terminal* penalty makes success identity-sensitive (needed for the figure); −1 was too harsh (avoidance). Hybrid = terminal but small.
+
+### Batch d1-v4 (submitted 2026-09-05 20:55, SLURM 44694528-44694537) — depth 1, lip 0, 1 distractor, **terminal** `reward_wrong_deposit=0.3`, 100M+100M, seeds 0 & 1
+Expected: bulldoze pays 0.5·1 − 0.5·0.3 = +0.35 (approach not extinguished); selecting pays +1. Success = goal object enters before the distractor.
+|O| ∈ {1, 10, 100, 1000} × seed ∈ {0, 1}: o{O}_nd1_t03_s{seed}. Two jobs queued behind the per-user GPU cap.
+Grasp arm (lip 0.55 + `reward_goal_distance_scale=0.2`) implemented and tested, to launch when GPUs free.
