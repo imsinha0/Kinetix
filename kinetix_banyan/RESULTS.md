@@ -110,3 +110,17 @@ Expected: bulldoze pays 0.5·1 − 0.5·0.3 = +0.35 (approach not extinguished);
 |O| ∈ {1, 10, 100, 1000} × seed ∈ {0, 1}: o{O}_nd1_t03_s{seed}. Two jobs queued behind the per-user GPU cap.
 Grasp arm (lip 0.55 + `reward_goal_distance_scale=0.2`) implemented and tested, to launch when GPUs free.
 * **v2 o1_nd1 terminal −1 (l1vy1de4) FINISHED**: S_end(d1)=1.000, S_start(d2)=0.812, S_end(d2)=0.812, S_end_final(d1)=1.000 → **Δ₂=0.188, B(2,1)=0.000**. Notably d2 success did not move at all during 100M steps of round-2 training (train success on d2 ≈0.80): the |O|=1 policy is frozen — no plasticity for the novel objects. First complete data point of the figure (|O|=1).
+
+#### d1-v4 at ~82M, pre-boundary (2026-09-05 21:50) — the Figure-5 pattern appears
+| |O| | seed | S(d1) | S(d2) | gap |
+|---|---|---|---|---|
+| 1 | 0 | 1.000 | 0.812 | 0.19 (replicates v2) |
+| 1 | 1 | collapsed (0/0 from start) | | |
+| 10 | 0 | 1.000 | 0.773 | 0.23 |
+| 10 | 1 | 1.000 | 0.531 | 0.47 |
+| 100 | 0 | 0.859 | 0.797 | 0.06 |
+| 100 | 1 (41M) | 0.906 | 0.812 | 0.09 |
+| 1000 | 0 | 0.883 | 0.812 | 0.07 |
+| 1000 | 1 | queued | | |
+Gap ≈0.2–0.5 at |O|≤10, ≈0.06–0.09 at |O|≥100; d1 mastery lower at high |O| (0.86–0.91 vs 1.0), as in the paper.
+Caveat: d2 success saturates at 0.812 (104/128 fixed episodes) in several runs → part of the residual high-|O| gap may be a layout ceiling of the fixed d2 eval set, not transfer. v3 non-terminal o1000_nd1 / o100_nd1 (100% at boundary) collapsed to 0 during round 2 → cancelled; queued seed 2 for all four |O| of v4.
