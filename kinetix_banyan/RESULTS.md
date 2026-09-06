@@ -219,3 +219,19 @@ Same shape under the paper's mixed-depth protocol: Δ₂ ≈ 0.5 at |O|=1, ≈ 0
 | 1000 | 0.73, 0.86, 0.22 | −0.018, −0.012, −0.004 | **−0.01** | 0.22, 0.04, 0.64 |
 Depth-2 Figure 5 on Kinetix: Δ₂ ≈ 0.4–0.66 at |O|=1 (when d1 is mastered; the one |O|=1 seed that only reached 0.33 had nothing to lose, Δ₂=0.03) vs ≈0 for |O| ≥ 10. B(2,1) is positive almost everywhere at depth 2 (0.04–0.64), i.e. round-2 training on novel objects+rules keeps improving the round-1 tasks — the seeds that were still weak at the boundary gain the most.
 Seed-level mastery variance is the main noise source (S_end(d1) ranges 0.22–0.95 within a point); 100M steps is short for depth 2 at high |O|.
+
+#### 2026-09-06 05:40 — d12-v1 COMPLETE (12 runs, 3 seeds per |O|) — `outputs/fig5/d12-v1/`, W&B figure5_plots_d12-v1
+| |O| | S_end(d1) per seed | Δ₂ per seed | mean Δ₂ | B(2,1) per seed | mean B |
+|---|---|---|---|---|---|
+| 1 | 0.86, 1.00, 0.96 | 0.494, 0.566, 0.568 | **0.54** | 0.05, −0.01, −0.16 | −0.04 |
+| 10 | 0.61, 0.15, 0.54 | −0.006, 0.003, 0.068 | **0.02** | 0.20, 0.27, 0.14 | 0.20 |
+| 100 | 0.67, 0.67, 0.63 | −0.002, 0.004, 0.015 | **0.01** | 0.12, 0.21, 0.22 | 0.18 |
+| 1000 | 0.29, 0.78, 0.85 | −0.005, 0.021, 0.016 | **0.01** | 0.03, 0.13, 0.02 | 0.06 |
+Cleanest version: all three |O|=1 seeds give Δ₂ ≈ 0.5–0.57 (depth-1 part 0.35–0.50, depth-2 part 0.51–0.79), every |O| ≥ 10 seed gives |Δ₂| ≤ 0.07. B(2,1) ≈ 0 at |O|=1 and ≈ 0.2 at |O|=10–100 (round-2 training on novel tasks improves the round-1 tasks when round 1 was diverse).
+
+## Summary (2026-09-06)
+The Banyan Figure-5 pattern is reproduced on the Kinetix substrate in three settings (depth 1, depth 2, mixed depths), 3–4 seeds per point, 100M+100M steps, groups d1-v4 / d2-v1 / d12-v1:
+* forward-transfer gap Δ₂ large at |O|=1 (0.23 / 0.41 / 0.54) and ≈0 once |O| ≥ 10–100;
+* backward transfer B(2,1) ≈ 0 at depth 1, positive (≈0.2) at depth 2 / mixed for |O| ≥ 10;
+* round-1 mastery decreases with |O| within the fixed budget.
+Minimal recipe: one task tree per episode + 1 distractor object, no lip, terminal wrong-deposit penalty 0.3 (Banyan's REWARD_WRONG_DEPOSIT made terminal so that success is identity-sensitive), goal + rule billboards in the entity observation, stock Kinetix PPO. Physics-NaN guard was essential. Next refinements queued: |O| ∈ {3, 30} to resolve the 1→10 transition.
