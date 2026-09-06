@@ -453,13 +453,8 @@ class BanyanKinetixEnv(KinetixEnv):
 
         is_depth1 = state.required_lhs < 0
 
-        # Depth 1: the goal-typed object inside the zone. With the terminal
-        # wrong-deposit mode, a distractor in the zone (and no success) is a dead-end.
+        # Depth 1: the goal-typed object inside the zone.
         d1_success = jnp.any(in_zone & (types == state.goal_token))
-        d1_deadend = (
-            self.wrong_deposit_terminal & (self.reward_wrong_deposit > 0.0)
-            & jnp.any(in_zone & (types != state.goal_token)) & ~d1_success
-        )
 
         # Depth 2: pairwise over object slots inside the zone.
         ii, jj = jnp.triu_indices(NUM_OBJECT_SLOTS, k=1)
@@ -475,19 +470,28 @@ class BanyanKinetixEnv(KinetixEnv):
         d2_deadend = jnp.any(pair_valid_global & ~pair_required) & ~d2_success
 
         success = jnp.where(is_depth1, d1_success, d2_success)
-        deadend = jnp.where(is_depth1, d1_deadend, d2_deadend)
-        deadend_penalty = jnp.where(is_depth1, self.reward_wrong_deposit, 1.0)
-        terminal_reward = jnp.where(success, 1.0, jnp.where(deadend, -deadend_penalty, 0.0))
-        terminal = success | deadend
-
-        # First-time event bonuses for REQUIRED objects only (goal-typed at
-        # depth 1; the rule pair at depth 2). Lifted = above the lip's top
-        # (nothing in the scene rests that high except a carried object).
+        # Structural dead-end (depth 2 only): a globally valid but not required
+        # pair merged -> -1. Wrong-deposit dead-end (any depth, terminal mode):
+        # a NON-required object entered the zone -> -reward_wrong_deposit.
         is_required = jnp.where(
             is_depth1,
             types == state.goal_token,
             (types == state.required_lhs) | (types == state.required_rhs),
         ) & state.circle.active[obj]
+        rule_deadend = jnp.where(is_depth1, jnp.asarray(False), d2_deadend)
+        wrong_deadend = (
+            self.wrong_deposit_terminal & (self.reward_wrong_deposit > 0.0)
+            & jnp.any(in_zone & ~is_required) & ~success & ~rule_deadend
+        )
+        deadend = rule_deadend | wrong_deadend
+        terminal_reward = jnp.where(
+            success, 1.0, jnp.where(rule_deadend, -1.0, jnp.where(wrong_deadend, -self.reward_wrong_deposit, 0.0))
+        )
+        terminal = success | deadend
+
+        # First-time event bonuses for REQUIRED objects only (goal-typed at
+        # depth 1; the rule pair at depth 2). Lifted = above the lip's top
+        # (nothing in the scene rests that high except a carried object).
         lifted_now = is_required & (pos[:, 1] >= c.lip_top)
         deposited_now = is_required & in_zone
         new_lifts = lifted_now & ~state.lift_flags

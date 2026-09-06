@@ -600,3 +600,33 @@ def test_physics_nan_terminates_with_zero_reward(setup):
     assert bool(np.asarray(info["physics_nan"]))
     # auto-reset delivered a clean state
     assert not bool(np.isnan(np.asarray(next_state.circle.position)).any())
+
+
+def test_wrong_deposit_terminal_mode_depth2(setup):
+    # Depth 2 with a distractor: distractor alone in zone -> terminal -0.3; one required alone -> nothing;
+    # both required -> +1 success.
+    bank = setup["d1_bank"]
+    idx = int(np.nonzero(np.asarray(bank["depth"]) == 2)[0][0])
+    row_bank = {k: v[idx : idx + 1] for k, v in bank.items()}
+    reset1 = make_banyan_reset_fn(setup["base"], setup["constants"], row_bank, num_distractors=1)
+    env_t = make_banyan_env(
+        base_state=setup["base"], static_env_params=setup["static"], env_params=setup["env_params"],
+        constants=setup["constants"], reset_fn=reset1, action_type="continuous",
+        reward_wrong_deposit=0.3, wrong_deposit_terminal=True,
+    )
+    ep = setup["env_params"]
+    state = reset1(jax.random.PRNGKey(9))
+    lhs, rhs = int(_sc(state.required_lhs)), int(_sc(state.required_rhs))
+    types = np.asarray(state.circle_types); active = np.asarray(state.circle.active)
+    slots = [s for s in OBJECT_SLOTS if active[s]]
+    assert len(slots) == 3
+    a = [s for s in slots if types[s] == lhs][0]; b = [s for s in slots if types[s] == rhs][0]
+    dis = [s for s in slots if types[s] not in (lhs, rhs)][0]
+    center = _zone_center(setup["constants"])
+    _o, _s, r, d, info = env_t.step(jax.random.PRNGKey(1), _place_in_zone(state, {dis: center}), _zero_action(env_t), ep)
+    assert abs(float(r) + 0.3) < 1e-5 and bool(d) and bool(np.asarray(info["deadend"]))
+    _o, _s, r1, d1_, info1 = env_t.step(jax.random.PRNGKey(1), _place_in_zone(state, {a: center}), _zero_action(env_t), ep)
+    assert not bool(d1_) and not bool(np.asarray(info1["deadend"])) and float(r1) >= 0.0
+    st = _place_in_zone(state, {a: center + np.array([-0.15, 0.0]), b: center + np.array([0.15, 0.0])})
+    _o, _s, r2, d2_, info2 = env_t.step(jax.random.PRNGKey(1), st, _zero_action(env_t), ep)
+    assert bool(d2_) and bool(np.asarray(info2["GoalR"])) and abs(float(r2) - 1.0) < 1e-5
