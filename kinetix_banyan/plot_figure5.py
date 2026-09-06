@@ -37,6 +37,9 @@ def fetch_runs(group: str, depths: tuple[int, ...], name_filter: str = ""):
         cfg = {k: v for k, v in r.config.items()}
         n_d1 = int(cfg.get("d1_num_instances", -1))
         summ = dict(r.summary)
+        if float(summ.get("boundary/S_end_d1", 0.0) or 0.0) < 0.05:
+            print(f"skipping dead run {r.name} ({r.id}): S_end_d1={summ.get('boundary/S_end_d1')}")
+            continue
         succ_keys = [f"eval/{b}_success_depth{d}" for b in ("d1", "d2") for d in depths]
         hist = r.history(keys=["timing/num_env_steps", "round", *succ_keys], pandas=False)
         diag = (
@@ -60,10 +63,21 @@ def fetch_runs(group: str, depths: tuple[int, ...], name_filter: str = ""):
                 diag=list(diag),
                 sel=list(sel),
                 floor=float(cfg.get("null_policy_floor", -1.0)),
+                seed=int(cfg.get("seed", 0)),
             )
         )
-    out.sort(key=lambda d: d["n_d1"])
+    out.sort(key=lambda d: (d["n_d1"], d["seed"]))
     return out
+
+
+def _agg(ns, vals):
+    """Group values by |O|: returns sorted unique ns, means, mins, maxs."""
+    uniq = sorted(set(ns))
+    groups = [[v for n, v in zip(ns, vals) if n == u and np.isfinite(v)] for u in uniq]
+    mean = np.array([np.mean(g) if g else np.nan for g in groups])
+    lo = np.array([np.min(g) if g else np.nan for g in groups])
+    hi = np.array([np.max(g) if g else np.nan for g in groups])
+    return np.array(uniq), mean, lo, hi
 
 
 def main():
@@ -102,16 +116,21 @@ def main():
     # ---------- Panel 1: success vs env steps, one line per |O| ----------
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.5), sharey=True)
     cmap = plt.get_cmap("viridis")
+    uniq_ns = sorted(set(ns))
+    color_of = {n: cmap(i / max(1, len(uniq_ns) - 1)) for i, n in enumerate(uniq_ns)}
+    labelled = set()
     for i, d in enumerate(runs):
-        color = cmap(i / max(1, len(runs) - 1))
+        color = color_of[d["n_d1"]]
+        lab = f"|O|={d['n_d1']}" if d["n_d1"] not in labelled else None
+        labelled.add(d["n_d1"])
         h = d["history"]
         steps = np.array([row["timing/num_env_steps"] for row in h], dtype=float)
         rounds = np.array([row.get("round", 1) for row in h])
         # During round 1 the "current bank" is d1; during round 2 it's d2.
         cur = np.array([_mean_succ(row, "d1" if row.get("round", 1) == 1 else "d2") for row in h], dtype=float)
         d2s = np.array([_mean_succ(row, "d2") for row in h], dtype=float)
-        axes[0].plot(steps / 1e6, cur, color=color, label=f"|O|={d['n_d1']}")
-        axes[1].plot(steps / 1e6, d2s, color=color, label=f"|O|={d['n_d1']}")
+        axes[0].plot(steps / 1e6, cur, color=color, label=lab, alpha=0.8)
+        axes[1].plot(steps / 1e6, d2s, color=color, label=lab, alpha=0.8)
     boundary = float(runs[0]["run"].config.get("total_timesteps_d1", 1e8)) / 1e6
     floor = max((d["floor"] for d in runs), default=-1.0)
     for ax, title in zip(axes, ["current-round bank success", "held-out d2 bank success"]):
@@ -131,7 +150,9 @@ def main():
 
     # ---------- Panel 2: delta_2 vs |O| ----------
     fig, ax = plt.subplots(figsize=(5.5, 4.2))
-    ax.plot(ns, delta2, "o-", label="Δ₂ (avg)")
+    u, m, lo, hi = _agg(ns, delta2)
+    ax.errorbar(u, m, yerr=[m - lo, hi - m], fmt="o-", capsize=3, label=f"Δ₂ (mean, min–max over {len(runs)} runs)")
+    ax.scatter(ns, delta2, s=14, color="k", alpha=0.5, zorder=3, label="individual seeds")
     if len(depths) > 1:
         ax.plot(ns, delta2_d1, "s--", alpha=0.6, label="Δ₂ depth-1")
         ax.plot(ns, delta2_d2, "^--", alpha=0.6, label="Δ₂ depth-2")
@@ -148,7 +169,9 @@ def main():
 
     # ---------- Panel 3: B(2,1) vs |O| ----------
     fig, ax = plt.subplots(figsize=(5.5, 4.2))
-    ax.plot(ns, b21, "o-", label="B(2,1) (avg)")
+    u, m, lo, hi = _agg(ns, b21)
+    ax.errorbar(u, m, yerr=[m - lo, hi - m], fmt="o-", capsize=3, label=f"B(2,1) (mean, min–max over {len(runs)} runs)")
+    ax.scatter(ns, b21, s=14, color="k", alpha=0.5, zorder=3, label="individual seeds")
     if len(depths) > 1:
         ax.plot(ns, b21_d1, "s--", alpha=0.6, label="depth-1")
         ax.plot(ns, b21_d2, "^--", alpha=0.6, label="depth-2")
@@ -166,7 +189,7 @@ def main():
     # ---------- Panel 4: dead-end rate + type selectivity ----------
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.2))
     for i, d in enumerate(runs):
-        color = cmap(i / max(1, len(runs) - 1))
+        color = color_of[d["n_d1"]]
         dg = d["diag"]
         if dg:
             steps = np.array([row["timing/num_env_steps"] for row in dg], dtype=float)
@@ -205,10 +228,11 @@ def main():
     with csv_path.open("w", newline="") as f:
         w = csv.writer(f)
         w.writerow(
-            ["n_d1", "delta_2", "delta_2_depth1", "delta_2_depth2", "B_2_1", "B_2_1_depth1", "B_2_1_depth2", "overlap", "run_id"]
+            ["n_d1", "seed", "S_end_d1", "S_start_d2", "S_end_d2", "S_end_final_d1", "delta_2", "delta_2_depth1", "delta_2_depth2", "B_2_1", "B_2_1_depth1", "B_2_1_depth2", "overlap", "run_id"]
         )
         for i, d in enumerate(runs):
-            w.writerow([ns[i], delta2[i], delta2_d1[i], delta2_d2[i], b21[i], b21_d1[i], b21_d2[i], overlaps[i], d["run"].id])
+            w.writerow([ns[i], d["seed"], _summ(d, "boundary/S_end_d1"), _summ(d, "boundary/S_start_d2"), _summ(d, "final/S_end_d2"), _summ(d, "final/S_end_final_d1"),
+                        delta2[i], delta2_d1[i], delta2_d2[i], b21[i], b21_d1[i], b21_d2[i], overlaps[i], d["run"].id])
 
     print("delta_2 by |O|:", dict(zip(ns, np.round(delta2, 3))))
     print("B_2_1  by |O|:", dict(zip(ns, np.round(b21, 3))))
@@ -234,9 +258,9 @@ def main():
         }
     )
     table = wandb.Table(
-        columns=["n_d1", "delta_2", "delta_2_depth1", "delta_2_depth2", "B_2_1", "B_2_1_depth1", "B_2_1_depth2", "run_id"],
+        columns=["n_d1", "seed", "delta_2", "delta_2_depth1", "delta_2_depth2", "B_2_1", "B_2_1_depth1", "B_2_1_depth2", "run_id"],
         data=[
-            [ns[i], delta2[i], delta2_d1[i], delta2_d2[i], b21[i], b21_d1[i], b21_d2[i], runs[i]["run"].id]
+            [ns[i], runs[i]["seed"], delta2[i], delta2_d1[i], delta2_d2[i], b21[i], b21_d1[i], b21_d2[i], runs[i]["run"].id]
             for i in range(len(runs))
         ],
     )
