@@ -209,3 +209,13 @@ Depth-1 Figure 5 on Kinetix: Δ₂ ≈ 0.23–0.25 at |O| ≤ 10 vs ≈ 0.04 at 
 | 100 | 0.673 | 0.675 | −0.002 | 0.021 | −0.025 | 0.118 | 0.236 |
 | 1000 | 0.293 | 0.298 | −0.005 | −0.004 | −0.006 | 0.033 | 0.035 |
 Same shape under the paper's mixed-depth protocol: Δ₂ ≈ 0.5 at |O|=1, ≈ 0 for |O| ≥ 10; B(2,1) positive at |O|=10–100 (driven by depth 2). |O|=1000 is a slow learner here (0.29 after 100M; 2000 bank rows) — the paper's "more diversity → lower mastery in a fixed budget" effect, exaggerated. Queued seeds 1 and 2 (d12v1-o{O}-s{1,2}).
+
+#### 2026-09-06 03:20 — d2-v1 COMPLETE (12 runs, 3 seeds per |O|) — `outputs/fig5/d2-v1/`, W&B figure5_plots_d2-v1
+| |O| | S_end(d1) per seed | Δ₂ per seed | mean Δ₂ | B(2,1) per seed |
+|---|---|---|---|---|
+| 1 | 0.95, 0.87, 0.33 | 0.660, 0.535, 0.025 | **0.41** | 0.05, 0.06, 0.39 |
+| 10 | 0.76, 0.67, 0.47 | −0.053, −0.021, 0.084 | **0.00** | 0.10, 0.24, 0.23 |
+| 100 | 0.65, 0.33, 0.68 | −0.055, −0.020, 0.002 | **−0.02** | 0.25, −0.02, 0.19 |
+| 1000 | 0.73, 0.86, 0.22 | −0.018, −0.012, −0.004 | **−0.01** | 0.22, 0.04, 0.64 |
+Depth-2 Figure 5 on Kinetix: Δ₂ ≈ 0.4–0.66 at |O|=1 (when d1 is mastered; the one |O|=1 seed that only reached 0.33 had nothing to lose, Δ₂=0.03) vs ≈0 for |O| ≥ 10. B(2,1) is positive almost everywhere at depth 2 (0.04–0.64), i.e. round-2 training on novel objects+rules keeps improving the round-1 tasks — the seeds that were still weak at the boundary gain the most.
+Seed-level mastery variance is the main noise source (S_end(d1) ranges 0.22–0.95 within a point); 100M steps is short for depth 2 at high |O|.
