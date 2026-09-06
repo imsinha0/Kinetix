@@ -158,3 +158,22 @@ Still running: o1000_s1 (boundary 0.957/0.908 → Δ₂=0.049; then NaN-died in 
 B(2,1) ≈ 0 everywhere at depth 1 (d1 stays mastered), consistent with the paper's small backward effect on the object axis.
 * o10_s2 (new code) is a genuine non-learner, not NaN: episode length 256, nothing ever reaches the zone, return ≈0.09 (shaping only), entropy decays → passive policy after early dead-ends (deadend_rate 0.17 at 15M). Terminal −0.3 can still induce avoidance in some seeds (1 of 8 new-code runs so far).
 * 23:25: cancelled o10_s2 (non-learner); queued seed 3 for all four |O| (d1v4-o{O}-s3) so every point has ≥3 live seeds after the two NaN deaths of the old-code runs.
+
+#### 2026-09-06 00:25 — depth-1 sweep nearly complete; depth-2 boundary reached
+**d1-v4 Δ₂ by |O| (S_end(d1) / S_start(d2))**:
+| |O| | s0 | s1 | s2 | s3 (running) |
+|---|---|---|---|---|
+| 1 | 1.000/0.812 = **0.188** | NaN-dead | 1.000/0.693 = **0.307** | 1.000/0.812 @88M |
+| 10 | 0.998/0.732 = **0.266** | 1.000/0.516 = **0.484** | non-learner | 0.758/0.805 @86M |
+| 100 | 0.828/0.812 = **0.016** | 0.990/0.910 = **0.080** | 0.801/0.791 = **0.010** | 0.852/0.797 @88M |
+| 1000 | 0.852/0.812 = **0.039** | 0.957/0.908 = **0.049** (NaN-died in r2) | 0.846/0.811 = **0.035** | 0.883/0.812 @69M |
+B(2,1) ≈ 0 for all live runs (−0.09 for o1_s2). Two policy modes visible: "0.81-plateau" (never improves on d2 in round 2) and "0.98-mode" (o10_s0/s1, o100_s1 reach ≥0.98 on d2 in round 2).
+
+**d2-v1 (depth 2 only, 3 objects) boundary, seed 0**:
+| |O| | S_end(d1) | S_start(d2) | Δ₂ |
+|---|---|---|---|
+| 1 | 0.949 | 0.289 | **0.660** |
+| 10 | 0.764 | 0.816 | −0.052 |
+| 100 | 0.652 | 0.707 | −0.055 |
+| 1000 | 0.727 | 0.744 | −0.017 |
+Depth 2 gives the sharpest picture yet: a 0.66 gap at |O|=1 collapsing to ≈0 by |O|=10, with d1 mastery decreasing with diversity (0.95 → 0.65–0.76), exactly the paper's qualitative Figure 5. Queued seeds 1 and 2 for all four depth-2 points (d2v1-o{O}-s{1,2}).
