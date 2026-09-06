@@ -235,3 +235,13 @@ The Banyan Figure-5 pattern is reproduced on the Kinetix substrate in three sett
 * backward transfer B(2,1) ≈ 0 at depth 1, positive (≈0.2) at depth 2 / mixed for |O| ≥ 10;
 * round-1 mastery decreases with |O| within the fixed budget.
 Minimal recipe: one task tree per episode + 1 distractor object, no lip, terminal wrong-deposit penalty 0.3 (Banyan's REWARD_WRONG_DEPOSIT made terminal so that success is identity-sensitive), goal + rule billboards in the entity observation, stock Kinetix PPO. Physics-NaN guard was essential. Next refinements queued: |O| ∈ {3, 30} to resolve the 1→10 transition.
+
+#### 2026-09-06 08:00 — |O|=3 and 30 added to d12-v1 (18 runs) — W&B figure5_plots_d12-v1 updated
+| |O| | Δ₂ per seed | mean Δ₂ | mean B(2,1) |
+|---|---|---|---|
+| 3 | 0.281, 0.103, −0.019 | **0.12** | 0.02 |
+| 30 | 0.025, 0.022, 0.002 | **0.02** | 0.09 |
+Full mixed-depth curve: Δ₂ = 0.54 (1) → 0.12 (3) → 0.02 (10) → 0.02 (30) → 0.01 (100) → 0.01 (1000): a smooth decay with most of the drop between 1 and 10 assignments, matching the paper's "Δ₂ quickly goes to 0".
+
+### Batch d12-long (submitted 2026-09-06 08:05) — same recipe, **300M round 1** + 100M round 2, |O| ∈ {100, 1000}, seeds 0–1
+Checks the caveat that the small high-|O| gap might partly reflect low round-1 mastery (0.3–0.85 at 100M): with a 3× longer round 1, does Δ₂ stay ≈0 as mastery rises?
