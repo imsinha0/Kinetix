@@ -398,11 +398,17 @@ class BanyanKinetixEnv(KinetixEnv):
         reward_first_deposit: float = 0.0,
         reward_height_scale: float = 0.0,
         reward_wrong_deposit: float = 0.0,
+        wrong_deposit_terminal: bool = False,
         reward_goal_distance_scale: float = 0.0,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.task_constants = constants
+        # If True, a distractor entering the zone at depth 1 ENDS the episode
+        # (reward -reward_wrong_deposit, counted as a dead-end/failure), so the
+        # success metric itself becomes identity-sensitive: bulldozing everything
+        # in only succeeds when the goal object happens to enter first.
+        self.wrong_deposit_terminal = bool(wrong_deposit_terminal)
         # Kinetix's stock dense shaping (dense_reward_scale, default 0.2 there),
         # restricted to the REQUIRED object(s): scale * (last_dist - dist) where
         # dist = nearest required object's distance to the zone centre. This is
@@ -447,8 +453,13 @@ class BanyanKinetixEnv(KinetixEnv):
 
         is_depth1 = state.required_lhs < 0
 
-        # Depth 1: the goal-typed object inside the zone.
+        # Depth 1: the goal-typed object inside the zone. With the terminal
+        # wrong-deposit mode, a distractor in the zone (and no success) is a dead-end.
         d1_success = jnp.any(in_zone & (types == state.goal_token))
+        d1_deadend = (
+            self.wrong_deposit_terminal & (self.reward_wrong_deposit > 0.0)
+            & jnp.any(in_zone & (types != state.goal_token)) & ~d1_success
+        )
 
         # Depth 2: pairwise over object slots inside the zone.
         ii, jj = jnp.triu_indices(NUM_OBJECT_SLOTS, k=1)
@@ -464,8 +475,9 @@ class BanyanKinetixEnv(KinetixEnv):
         d2_deadend = jnp.any(pair_valid_global & ~pair_required) & ~d2_success
 
         success = jnp.where(is_depth1, d1_success, d2_success)
-        deadend = jnp.where(is_depth1, jnp.asarray(False), d2_deadend)
-        terminal_reward = jnp.where(success, 1.0, jnp.where(deadend, -1.0, 0.0))
+        deadend = jnp.where(is_depth1, d1_deadend, d2_deadend)
+        deadend_penalty = jnp.where(is_depth1, self.reward_wrong_deposit, 1.0)
+        terminal_reward = jnp.where(success, 1.0, jnp.where(deadend, -deadend_penalty, 0.0))
         terminal = success | deadend
 
         # First-time event bonuses for REQUIRED objects only (goal-typed at
@@ -510,9 +522,11 @@ class BanyanKinetixEnv(KinetixEnv):
         )
 
         # Bonuses are dropped on terminal steps (success is exactly +1); the
-        # wrong-deposit penalty is always charged so bulldozing never nets +1.
+        # non-terminal wrong-deposit penalty is still charged on a success step
+        # so bulldozing never nets +1. In terminal mode the dead-end reward
+        # already carries the penalty.
         reward = terminal_reward + jnp.where(terminal, 0.0, bonus) - jnp.where(
-            terminal, self.reward_wrong_deposit * jnp.sum(new_wrong), 0.0
+            terminal & ~deadend, self.reward_wrong_deposit * jnp.sum(new_wrong), 0.0
         )
 
         n_required_in_zone = jnp.where(
@@ -595,6 +609,7 @@ class BanyanKinetixEnv(KinetixEnv):
                 self.reward_first_deposit,
                 self.reward_height_scale,
                 self.reward_wrong_deposit,
+                self.wrong_deposit_terminal,
                 self.reward_goal_distance_scale,
             )
         )
@@ -616,6 +631,7 @@ def make_banyan_env(
     reward_first_deposit: float = 0.0,
     reward_height_scale: float = 0.0,
     reward_wrong_deposit: float = 0.0,
+    wrong_deposit_terminal: bool = False,
     reward_goal_distance_scale: float = 0.0,
 ) -> "BanyanKinetixEnv":
     """Standard construction used by tests, the gate script, and PPO."""
@@ -643,6 +659,7 @@ def make_banyan_env(
         reward_first_deposit=reward_first_deposit,
         reward_height_scale=reward_height_scale,
         reward_wrong_deposit=reward_wrong_deposit,
+        wrong_deposit_terminal=wrong_deposit_terminal,
         reward_goal_distance_scale=reward_goal_distance_scale,
     )
 

@@ -561,3 +561,29 @@ def test_goal_distance_shaping_is_potential_based(setup):
                            velocity=st3.circle.velocity.at[goal_slot].set(0.0))
     _o, _s, r2, _d, _i = env_d.step(jax.random.PRNGKey(3), st3.replace(circle=c), _zero_action(env_d), ep)
     assert float(r2) < -0.5
+
+
+def test_wrong_deposit_terminal_mode(setup):
+    reset3 = make_banyan_reset_fn(setup["base"], setup["constants"], setup["d1_bank"], num_distractors=3)
+    env_t = make_banyan_env(
+        base_state=setup["base"], static_env_params=setup["static"], env_params=setup["env_params"],
+        constants=setup["constants"], reset_fn=reset3, action_type="continuous",
+        reward_wrong_deposit=0.3, wrong_deposit_terminal=True,
+    )
+    ep = setup["env_params"]
+    bank = setup["d1_bank"]
+    idx = int(np.nonzero(np.asarray(bank["depth"]) == 1)[0][0])
+    row_bank = {k: v[idx : idx + 1] for k, v in bank.items()}
+    state = make_banyan_reset_fn(setup["base"], setup["constants"], row_bank, num_distractors=3)(jax.random.PRNGKey(5))
+    goal = int(_sc(state.goal_token))
+    types = np.asarray(state.circle_types)
+    wrongs = [s for s in OBJECT_SLOTS if types[s] >= 0 and types[s] != goal]
+    right = [s for s in OBJECT_SLOTS if types[s] == goal][0]
+    center = _zone_center(setup["constants"])
+    # distractor alone in zone: terminal, reward -0.3, flagged dead-end, not success
+    _o, _s, r, d, info = env_t.step(jax.random.PRNGKey(1), _place_in_zone(state, {wrongs[0]: center}), _zero_action(env_t), ep)
+    assert abs(float(r) + 0.3) < 1e-5 and bool(d) and bool(np.asarray(info["deadend"])) and not bool(np.asarray(info["GoalR"]))
+    # goal + distractor entering together: success wins, exactly +1 (deadend requires ~success)
+    st = _place_in_zone(state, {right: center + np.array([-0.15, 0.0]), wrongs[0]: center + np.array([0.15, 0.0])})
+    _o, _s, r2, d2, info2 = env_t.step(jax.random.PRNGKey(1), st, _zero_action(env_t), ep)
+    assert bool(d2) and bool(np.asarray(info2["GoalR"])) and abs(float(r2) - 0.7) < 1e-5  # +1 minus the 0.3 charged for the distractor
