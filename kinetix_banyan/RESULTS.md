@@ -142,3 +142,6 @@ Fix (commit "NaN guard"): reward := 0 on physics-NaN steps, infos nan_to_num'd, 
 | 1000 | 0 | 0.852 | 0.812 | 0.040 |
 Δ₂ ≈ 0.19–0.48 at |O| ≤ 10, ≈ 0.02–0.10 at |O| ≥ 100 → **Figure-5 pattern on Kinetix**. Round 2 lifts d2 at |O|=10 to 0.91–0.94 (plasticity present), unlike the frozen |O|=1 v2 run — so 0.812 was not an eval ceiling.
 v3 finished (non-terminal, identity-insensitive success): Δ₂ = 0.008–0.025 everywhere, as predicted; not usable for the figure.
+
+### Batch d2-v1 (submitted 2026-09-05 22:40, SLURM 44713222-44713235) — **depth 2 only** (`task_depths=[2]`), lip 0, 1 distractor, terminal `reward_wrong_deposit=0.3`, 100M+100M, seed 0
+Episode = 3 objects (the tree's two leaves + 1 distractor); success = both leaves in the zone; distractor in zone → terminal −0.3; a globally-valid-but-not-required pair → −1 (structural dead-end). d2 bank = novel objects AND novel rules. |O| ∈ {1, 10, 100, 1000}: d2_o{O}_nd1_t03_s0. Terminal penalty generalised to all depths (commit c0694bb, 21 tests pass). Cancelled the NaN-dead d1v4-o1-s1.
