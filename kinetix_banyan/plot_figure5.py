@@ -133,15 +133,27 @@ def main():
         # During round 1 the "current bank" is d1; during round 2 it's d2.
         cur = np.array([_mean_succ(row, "d1" if row.get("round", 1) == 1 else "d2") for row in h], dtype=float)
         d2s = np.array([_mean_succ(row, "d2") for row in h], dtype=float)
+        # A run that died (NaN) during round 2 contributes only its round-1 segment to the means.
+        dead_r2 = _summ(d, "final/S_end_d2") < 0.05 and _summ(d, "final/S_end_final_d1") < 0.05
+        if dead_r2:
+            r2 = np.array([row.get("round", 1) for row in h]) == 2
+            cur[r2] = np.nan
+            d2s[r2] = np.nan
         axes[0].plot(steps / 1e6, cur, color=color, alpha=0.2, lw=0.8)
         axes[1].plot(steps / 1e6, d2s, color=color, alpha=0.2, lw=0.8)
         order = np.argsort(steps)
-        per_n[d["n_d1"]]["cur"].append(np.interp(grid, steps[order], cur[order]))
-        per_n[d["n_d1"]]["d2"].append(np.interp(grid, steps[order], d2s[order]))
+        ok = ~np.isnan(cur[order])
+        gcur = np.interp(grid, steps[order][ok], cur[order][ok])
+        gd2 = np.interp(grid, steps[order][ok], d2s[order][ok])
+        if dead_r2:
+            gcur[grid > steps[order][ok].max()] = np.nan
+            gd2[grid > steps[order][ok].max()] = np.nan
+        per_n[d["n_d1"]]["cur"].append(gcur)
+        per_n[d["n_d1"]]["d2"].append(gd2)
     for n in uniq_ns:
         k = len(per_n[n]["cur"])
-        axes[0].plot(grid / 1e6, np.mean(per_n[n]["cur"], axis=0), color=color_of[n], lw=2.2, label=f"|O|={n} (mean of {k})")
-        axes[1].plot(grid / 1e6, np.mean(per_n[n]["d2"], axis=0), color=color_of[n], lw=2.2, label=f"|O|={n} (mean of {k})")
+        axes[0].plot(grid / 1e6, np.nanmean(per_n[n]["cur"], axis=0), color=color_of[n], lw=2.2, label=f"|O|={n} (mean of {k})")
+        axes[1].plot(grid / 1e6, np.nanmean(per_n[n]["d2"], axis=0), color=color_of[n], lw=2.2, label=f"|O|={n} (mean of {k})")
     boundary = float(runs[0]["run"].config.get("total_timesteps_d1", 1e8)) / 1e6
     floor = max((d["floor"] for d in runs), default=-1.0)
     for ax, title in zip(
