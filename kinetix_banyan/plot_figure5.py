@@ -301,7 +301,7 @@ def main():
         entity=ENTITY,
         project=PROJECT,
         group=args.group,
-        name=f"figure5_plots_{tag}",
+        name=f"Figure 5 — depth{'s' if len(depths) > 1 else ''} {'+'.join(map(str, depths))} ({tag})",
         notes=f"Figure-5 panels for the Kinetix substrate from group {args.group}. {PRELIM}",
         job_type="analysis",
     )
