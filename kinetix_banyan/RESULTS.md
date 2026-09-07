@@ -256,3 +256,6 @@ Checks the caveat that the small high-|O| gap might partly reflect low round-1 m
 With 3× the round-1 budget, high-|O| mastery rises to 0.78–0.90 (from 0.29–0.85 at 100M) and Δ₂ stays ≤ 0.03. The near-zero forward gap at high diversity is genuine transfer, not an artefact of under-training. B(2,1) shrinks toward 0 once round 1 is long enough to master the bank.
 
 **Autoresearch stopped here (user request, 2026-09-06).** Deliverables: figures + CSVs in `outputs/fig5/{d1-v4,d2-v1,d12-v1}/`, W&B runs `figure5_plots_*` in project kinetix-banyan, this log, and the `banyan` git branch.
+
+#### 2026-09-07 — W&B cleanup
+Deleted from W&B: the dead-end batches d1-v1/v2/v3 (run ids cited above no longer resolve; their numbers are preserved in this log), the three crashed d1-v4 seeds, and all superseded figure runs. Kept: d1-v4, d2-v1, d12-v1, d12-long training runs and one figure run per regime, renamed "Figure 5 — depth 1 (d1-v4)", "Figure 5 — depth 2 (d2-v1)", "Figure 5 — mixed depths 1+2 (d12-v1)". Pre-session groups (kinetix-banyan-fig5, phase3, v2–v5 probes, diagnostics) untouched.
