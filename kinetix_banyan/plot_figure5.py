@@ -123,22 +123,31 @@ def main():
     cmap = plt.get_cmap("viridis")
     uniq_ns = sorted(set(ns))
     color_of = {n: cmap(i / max(1, len(uniq_ns) - 1)) for i, n in enumerate(uniq_ns)}
-    labelled = set()
-    for i, d in enumerate(runs):
+    # Individual seeds faint; per-|O| mean (on a common step grid) as the solid, labelled line.
+    grid = np.linspace(0.0, max(float(row["timing/num_env_steps"]) for d in runs for row in d["history"]), 200)
+    per_n = {n: {"cur": [], "d2": []} for n in uniq_ns}
+    for d in runs:
         color = color_of[d["n_d1"]]
-        lab = f"|O|={d['n_d1']}" if d["n_d1"] not in labelled else None
-        labelled.add(d["n_d1"])
         h = d["history"]
         steps = np.array([row["timing/num_env_steps"] for row in h], dtype=float)
-        rounds = np.array([row.get("round", 1) for row in h])
         # During round 1 the "current bank" is d1; during round 2 it's d2.
         cur = np.array([_mean_succ(row, "d1" if row.get("round", 1) == 1 else "d2") for row in h], dtype=float)
         d2s = np.array([_mean_succ(row, "d2") for row in h], dtype=float)
-        axes[0].plot(steps / 1e6, cur, color=color, label=lab, alpha=0.8)
-        axes[1].plot(steps / 1e6, d2s, color=color, label=lab, alpha=0.8)
+        axes[0].plot(steps / 1e6, cur, color=color, alpha=0.2, lw=0.8)
+        axes[1].plot(steps / 1e6, d2s, color=color, alpha=0.2, lw=0.8)
+        order = np.argsort(steps)
+        per_n[d["n_d1"]]["cur"].append(np.interp(grid, steps[order], cur[order]))
+        per_n[d["n_d1"]]["d2"].append(np.interp(grid, steps[order], d2s[order]))
+    for n in uniq_ns:
+        k = len(per_n[n]["cur"])
+        axes[0].plot(grid / 1e6, np.mean(per_n[n]["cur"], axis=0), color=color_of[n], lw=2.2, label=f"|O|={n} (mean of {k})")
+        axes[1].plot(grid / 1e6, np.mean(per_n[n]["d2"], axis=0), color=color_of[n], lw=2.2, label=f"|O|={n} (mean of {k})")
     boundary = float(runs[0]["run"].config.get("total_timesteps_d1", 1e8)) / 1e6
     floor = max((d["floor"] for d in runs), default=-1.0)
-    for ax, title in zip(axes, ["current-round bank success", "held-out d2 bank success"]):
+    for ax, title in zip(
+        axes,
+        ["current-round bank success (d1 in round 1, d2 in round 2)", "held-out d2 bank success (zero-shot during round 1)"],
+    ):
         ax.axvline(boundary, ls="--", color="gray", lw=1)
         if floor >= 0:
             ax.axhline(floor, ls=":", color="red", lw=1.2, label=f"null-policy floor ({floor:.2f})")
