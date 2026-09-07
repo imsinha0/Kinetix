@@ -212,6 +212,36 @@ def main():
     fig.savefig(p3, dpi=150)
     plt.close(fig)
 
+    # ---------- Panel 3b: B(2,1) components as bars (the "draft Figure 3" style) ----------
+    # blue = success on the d1 tasks right after round 1 (S_end(d1)); red = the same
+    # tasks after round 2 (S_end_final(d1)). red > blue = positive backward transfer.
+    after1 = [_summ(d, "boundary/S_end_d1") for d in runs]
+    after2 = [np.nan if np.isnan(_b21(d)) else _summ(d, "final/S_end_final_d1") for d in runs]
+    u1, m1, lo1, hi1 = _agg(ns, after1)
+    u2, m2, lo2, hi2 = _agg(ns, after2)
+    fig, ax = plt.subplots(figsize=(6.0, 4.2))
+    x = np.arange(len(u1))
+    width = 0.38
+    ax.bar(x - width / 2, m1, width, yerr=[m1 - lo1, hi1 - m1], capsize=3, color="#6688cc", label="after $d_1$ (S_end(d1))")
+    ax.bar(x + width / 2, m2, width, yerr=[m2 - lo2, hi2 - m2], capsize=3, color="#cc6655", label="after $d_2$ (S_end_final(d1))")
+    for xi, n in zip(x, u1):
+        ys1 = [v for nn, v in zip(ns, after1) if nn == n and np.isfinite(v)]
+        ys2 = [v for nn, v in zip(ns, after2) if nn == n and np.isfinite(v)]
+        ax.scatter([xi - width / 2] * len(ys1), ys1, s=10, color="k", alpha=0.5, zorder=3)
+        ax.scatter([xi + width / 2] * len(ys2), ys2, s=10, color="k", alpha=0.5, zorder=3)
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"{n // 1000}K" if n >= 1000 and n % 1000 == 0 else str(n) for n in u1])
+    ax.set_xlabel("|O| (d1 object assignments)")
+    ax.set_ylabel("success on d1 tasks")
+    ax.set_ylim(0, 1.05)
+    ax.grid(alpha=0.3, axis="y")
+    ax.legend(fontsize=8, loc="lower right")
+    ax.set_title(f"B(2,1) components: d1 success after round 1 vs after round 2 [{tag}]\n(red > blue = positive backward transfer; mean, min–max, seeds as dots)\n{PRELIM}", fontsize=8)
+    fig.tight_layout()
+    p3b = args.outdir / "kinetix_figure5_B21_bars.png"
+    fig.savefig(p3b, dpi=150)
+    plt.close(fig)
+
     # ---------- Panel 4: dead-end rate + type selectivity ----------
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.2))
     for i, d in enumerate(runs):
@@ -262,7 +292,7 @@ def main():
 
     print("delta_2 by |O|:", dict(zip(ns, np.round(delta2, 3))))
     print("B_2_1  by |O|:", dict(zip(ns, np.round(b21, 3))))
-    print(f"wrote {p1}, {p2}, {p3}, {csv_path}")
+    print(f"wrote {p1}, {p2}, {p3}, {p3b}, {csv_path}")
     if args.no_wandb:
         return
 
@@ -280,6 +310,7 @@ def main():
             "figures/kinetix_figure5_success_vs_steps": wandb.Image(str(p1)),
             "figures/kinetix_figure5_delta2_vs_O": wandb.Image(str(p2)),
             "figures/kinetix_figure5_B21_vs_O": wandb.Image(str(p3)),
+            "figures/kinetix_figure5_B21_bars": wandb.Image(str(p3b)),
             "figures/kinetix_figure5_diagnostics": wandb.Image(str(p4)),
         }
     )
@@ -303,7 +334,7 @@ def main():
         )
     art = wandb.Artifact("kinetix_figure5_data", type="analysis")
     art.add_file(str(csv_path))
-    for p in (p1, p2, p3, p4):
+    for p in (p1, p2, p3, p3b, p4):
         art.add_file(str(p))
     run.log_artifact(art)
     run.finish()
