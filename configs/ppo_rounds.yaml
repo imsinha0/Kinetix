@@ -1,0 +1,58 @@
+defaults:
+  - env: entity
+  - learning:
+    - ppo-base
+    - ppo-rnn
+  - misc: misc
+  - model:
+    - model-base
+    - model-transformer
+    - model-perm-invariant-mlp
+  - _self_
+
+env:
+  # Stock Kinetix dense distance shaping (their default).
+  dense_reward_scale: 0.2
+
+misc:
+  wandb_project: kinetix-rounds
+  wandb_entity: imsinha-harvard-university
+  save_path: null
+  save_policy: false
+  video_frequency: 10
+
+# --- Environment size: the locomotion preset (kinetix/environment/ued/locomotion_distribution.py)
+# env_size_type is neither "predefined" nor "custom" so the static params come from these keys.
+env_size_name: locomotion
+env_size_type: locomotion
+num_polygons: 10
+num_circles: 2
+num_joints: 6
+num_thrusters: 1
+num_motor_bindings: 4
+num_thruster_bindings: 2
+frame_skip: 2
+max_timesteps: null  # null = stock 256
+eval_levels: []
+
+# --- N-round continual protocol on disjoint task pools ---
+num_rounds: 10
+steps_per_round: 100000000
+# Diversity axis: number of distinct locomotion levels in each round's pool.
+# 1 = one fixed level per round; 256; 65536 (= 256^2, effectively a new level every episode).
+tasks_per_round: 256
+task_seed: 123
+# Extra kwargs for sample_locomotion_level (see its docstring), e.g.
+# {num_random_legs_min: 0, num_random_legs_max: 2}. Empty = the repo defaults.
+locomotion_kwargs: {}
+
+# --- Eval: fixed episodes per pool; all pools evaluated every eval_freq updates and at boundaries ---
+eval_freq: 16
+eval_temperature: 0.0001
+eval_num_episodes_periodic: 64
+eval_num_episodes_full: 256
+eval_num_video_episodes: 4
+# GIFs (pool 1 + current pool) every N updates during each round, plus at every boundary.
+video_freq_updates: 128
+
+seed: 0
