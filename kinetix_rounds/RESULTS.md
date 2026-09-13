@@ -21,3 +21,4 @@ Note ~25% of levels have a red (lava) floor: the green body must not touch it.
 ## Runs
 ### Batch loco-r10-v1 (2026-09-13) — n ∈ {1, 256, 65536}, seed 0, 10 × 100M
 Round 1 doubles as the learnability pilot for the distribution.
+* 2026-09-13 14:05: kempner_h100 queue blocked by 72 pending fig6_netsize jobs (user's own Banyan sweep, submitted 10:32) + 16 running = per-user cap. Resubmitted the three runs to `kempner_requeue` (preemptible, PreemptMode=REQUEUE, `--requeue`); n=1 and n=256 started within 2 min (holygpu7c nodes). If preemptions bite, add round-boundary checkpoint/resume.
