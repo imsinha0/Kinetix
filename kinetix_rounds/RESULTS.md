@@ -34,3 +34,13 @@ Round 1 doubles as the learnability pilot for the distribution.
 | pilot_simple256_n256 | same, horizon 256 |
 | pilot_nored512_n256 | default morphology (1 extra leg), no lava floor, horizon 512 |
 | pilot_simple512_n1 | simple variant on a single fixed level |
+
+#### 2026-09-13 17:40 — pilot results
+| pilot | eval success @ end |
+|---|---|
+| simple512_n256 (2-leg, no lava, 512 steps, 256 levels) | 0.094 after 100M |
+| simple256_n256 | 0.039 after 100M |
+| nored512_n256 (default morphology, no lava) | 0.078 @ 85M |
+| **simple512_n1 (one level)** | **1.000 @ 62M** (train 0.84) |
+The simple 2-leg / no-lava / 512-step variant is learnable per level (the default extra-leg + 256-step one was not: 0% at 40M), but generalising across 256 morphologies is slow (9% in 100M). Decision: run the 10-round sweep on this variant anyway (S_end(d_r) vs r is exactly what Figure 6 measures, high-n rounds will show slow accumulation), and pilot Kinetix's stock random 's' distribution (with the stock no-op filter) as a faster-learning alternative family.
+### Batch loco-r10-v2 (17:45): simple512 variant, n ∈ {1, 256, 65536}, seed 0, 10 × 100M. Pilot rand-pilot: random 's' levels, no-op filtered, n=256, 1 × 100M.
