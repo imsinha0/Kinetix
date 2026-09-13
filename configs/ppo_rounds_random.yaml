@@ -34,7 +34,7 @@ tasks_per_round: 256
 task_seed: 123
 
 eval_freq: 16
-eval_temperature: 0.0001
+eval_temperature: 1.0  # stock Kinetix evaluates the sampled policy; greedy is degenerate on 1-level pools
 eval_num_episodes_periodic: 64
 eval_num_episodes_full: 256
 eval_num_video_episodes: 4
