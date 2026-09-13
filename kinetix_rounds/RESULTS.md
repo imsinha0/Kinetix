@@ -23,3 +23,14 @@ Note ~25% of levels have a red (lava) floor: the green body must not touch it.
 Round 1 doubles as the learnability pilot for the distribution.
 * 2026-09-13 14:05: kempner_h100 queue blocked by 72 pending fig6_netsize jobs (user's own Banyan sweep, submitted 10:32) + 16 running = per-user cap. Resubmitted the three runs to `kempner_requeue` (preemptible, PreemptMode=REQUEUE, `--requeue`); n=1 and n=256 started within 2 min (holygpu7c nodes). If preemptions bite, add round-boundary checkpoint/resume.
 * 14:15: requeue partition preempted both running jobs within minutes (holygpu7c nodes) — unusable for 8h runs even with resume (each restart re-compiles ~3–5 min). Added chunk-level checkpoint/resume to `ppo_rounds.py` (params, optimizer, RMS, boundary matrix, counters, W&B run id → `checkpoints/rounds/<group>/<run>_s<seed>/latest.pkl`; a requeued job continues mid-round in the same W&B run; tested on CPU). Resubmitted all three to kempner_h100 and used `scontrol top` to place them ahead of the user's 72 pending fig6_netsize jobs (same user, so this only reorders our own queue).
+
+#### 2026-09-13 15:10 — pilot round 1 result: default locomotion distribution is NOT learnable in 100M
+* n=1 (single level, q3fe13y5): 0% success through 40M steps at 49k sps. GIF: the walker flips onto its back in the first steps and crawls inverted toward the goal (dense reward ≈0.25/episode), never touching it in 256 steps. n=256 (d5rp2duu): 2–3% on every pool = chance. Cancelled both.
+* Motors are always on with joint limits (not the cause). Likely causes: the asymmetric extra leg destabilises the body; 25% lava floors (body touch = −1) make a quarter of levels much harder; 256 steps is short for 2.5 units of travel by a crawler.
+### Pilots loco-pilot (1 round × 100M, seed 0), submitted 15:10
+| job | variant |
+|---|---|
+| pilot_simple512_n256 | 2-leg symmetric walkers (no extra legs), no lava floor, horizon 512 |
+| pilot_simple256_n256 | same, horizon 256 |
+| pilot_nored512_n256 | default morphology (1 extra leg), no lava floor, horizon 512 |
+| pilot_simple512_n1 | simple variant on a single fixed level |
