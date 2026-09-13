@@ -24,6 +24,7 @@ Protocol (Banyan paper, Figure 6 style):
 
 import functools
 import os
+import pickle
 import subprocess
 import sys
 import time
@@ -40,6 +41,7 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 import wandb
+from flax import serialization
 from flax.serialization import to_state_dict
 from flax.training.train_state import TrainState
 from jax.sharding import PartitionSpec
@@ -691,15 +693,15 @@ def make_train(config, env_params, static_env_params, envs, full_pools, periodic
     update_fns = {r: make_update_step(envs[r], r) for r in envs}
     run_chunk_cache = {}
 
-    def run_round(round_idx, runner_state, rng):
+    def run_round(round_idx, runner_state, rng, start_done=0, on_chunk=None):
         """Run one round's updates in chunks of ``video_freq_updates``, logging
-        GIFs of the fixed video episodes between chunks. (The boundary and
-        final videos are logged by the caller.) Compiles once per distinct
-        chunk length."""
+        GIFs of the fixed video episodes between chunks and calling ``on_chunk``
+        (checkpointing) after every chunk. ``start_done`` resumes a partially
+        completed round. Compiles once per distinct chunk length."""
         num_updates = int(config["num_updates_per_round"])
         chunk = int(config.get("video_freq_updates", 0)) or num_updates
         chunk = max(1, min(chunk, num_updates))
-        done = 0
+        done = int(start_done)
         while done < num_updates:
             n = min(chunk, num_updates - done)
             key = (round_idx, n)
@@ -707,6 +709,8 @@ def make_train(config, env_params, static_env_params, envs, full_pools, periodic
                 run_chunk_cache[key] = _make_run_chunk(update_fns[round_idx], n)
             runner_state, _ = run_chunk_cache[key](runner_state)
             done += n
+            if on_chunk is not None:
+                on_chunk(round_idx, done, runner_state)
             if done < num_updates:
                 rng, _rng = jax.random.split(rng)
                 videos = jax.device_get(
@@ -747,15 +751,50 @@ def make_train(config, env_params, static_env_params, envs, full_pools, periodic
                 )
         wandb.log(to_log)
 
-    def train(rng):
+    ckpt_dir = Path(config["ckpt_dir"]) if config.get("ckpt_dir") else None
+
+    def save_ckpt(round_idx, done_updates, runner_state, M, boundary_done, rng):
+        """Atomic checkpoint (params, optimizer, RMS, boundary matrix, counters, W&B run id)
+        so a preempted/requeued SLURM job resumes mid-round in the same W&B run."""
+        if ckpt_dir is None or jax.process_index() != 0:
+            return
+        ckpt_dir.mkdir(parents=True, exist_ok=True)
+        payload = dict(
+            round=int(round_idx),
+            done_updates=int(done_updates),
+            boundary_done=bool(boundary_done),
+            update_step=int(runner_state.update_step),
+            train_state=jax.device_get(serialization.to_state_dict(runner_state.train_state)),
+            extra=jax.device_get(runner_state.extra),
+            M={int(b): {int(j): float(v) for j, v in row.items()} for b, row in M.items()},
+            rng=np.asarray(jax.device_get(rng)),
+            wandb_run_id=(wandb.run.id if (config["use_wandb"] and wandb.run is not None) else None),
+        )
+        tmp = ckpt_dir / "latest.pkl.tmp"
+        with tmp.open("wb") as f:
+            pickle.dump(payload, f)
+        os.replace(tmp, ckpt_dir / "latest.pkl")
+        logger.info(f"[CKPT] saved round={round_idx} done={done_updates}/{config['num_updates_per_round']} boundary_done={boundary_done}")
+
+    def train(rng, resume=None):
         # INIT NETWORK (all rounds share obs/action spaces; use the round-1 env)
         rng, _rng = jax.random.split(rng)
         train_state = get_train_state_from_config(config, _rng, envs[1], env_params)
 
+        if resume is not None:
+            train_state = serialization.from_state_dict(train_state, resume["train_state"])
+            M = {int(b): {int(j): float(v) for j, v in row.items()} for b, row in resume["M"].items()}
+            start_round, start_done, boundary_done = int(resume["round"]), int(resume["done_updates"]), bool(resume["boundary_done"])
+            update_step0 = int(resume["update_step"])
+            rng = jnp.asarray(resume["rng"], dtype=jnp.uint32)
+            logger.info(f"[RESUME] round={start_round} done={start_done} boundary_done={boundary_done} update_step={update_step0}")
+        else:
+            M, start_round, start_done, boundary_done, update_step0 = {}, 1, 0, True, 0
+
         rng, _rng = jax.random.split(rng)
         rngs_per_device = jax.device_put(jax.random.split(_rng, NUM_GPUS), partitioned_sharding)
-        obsv, env_state, init_hstate, init_dones = init_fns[1](rngs_per_device)
-        initial_extra = {"rms": rms_init(jax.tree.map(lambda x: x[0], obsv))}
+        obsv, env_state, init_hstate, init_dones = init_fns[start_round](rngs_per_device)
+        initial_extra = resume["extra"] if resume is not None else {"rms": rms_init(jax.tree.map(lambda x: x[0], obsv))}
 
         rng, _rng = jax.random.split(rng)
         runner_state = RunnerState(
@@ -766,11 +805,10 @@ def make_train(config, env_params, static_env_params, envs, full_pools, periodic
             extra=jax.device_put(initial_extra, replicated_sharding),
             hstate=init_hstate,
             rng=jax.random.split(_rng, NUM_GPUS),
-            update_step=jax.device_put(jnp.array(0), replicated_sharding),
+            update_step=jax.device_put(jnp.array(update_step0), replicated_sharding),
         )
 
         # M[b][j] = success on pool j measured at the boundary after round b (b = 0: untrained).
-        M = {}
 
         def _full_eval_and_log(b):
             nonlocal rng
@@ -790,10 +828,15 @@ def make_train(config, env_params, static_env_params, envs, full_pools, periodic
             )
             _log_videos(videos, max(b, 1), runner_state.update_step)
 
-        _full_eval_and_log(0)
+        def _on_chunk(round_idx, done, rs):
+            save_ckpt(round_idx, done, rs, M, boundary_done=False, rng=rng)
 
-        for r in range(1, num_rounds + 1):
-            if r > 1:
+        if resume is None:
+            _full_eval_and_log(0)
+            save_ckpt(1, 0, runner_state, M, boundary_done=True, rng=rng)
+
+        for r in range(start_round, num_rounds + 1):
+            if r > start_round:
                 # Fresh envs from pool r; params, optimizer state, RMS state and the
                 # global update counter carry over unchanged.
                 rng, _rng, _rng2 = jax.random.split(rng, 3)
@@ -809,12 +852,17 @@ def make_train(config, env_params, static_env_params, envs, full_pools, periodic
                     rng=jax.random.split(_rng2, NUM_GPUS),
                     update_step=runner_state.update_step,
                 )
-            logger.info(f"Round {r}/{num_rounds}: {config['num_updates_per_round']} updates on pool {r}")
-            rng, _rng = jax.random.split(rng)
-            runner_state = run_round(r, runner_state, _rng)
-            jax.block_until_ready(runner_state.train_state.params)
-            assert int(runner_state.update_step) == r * config["num_updates_per_round"]
-            _full_eval_and_log(r)
+            done0 = start_done if r == start_round else 0
+            if done0 < config["num_updates_per_round"]:
+                logger.info(f"Round {r}/{num_rounds}: updates {done0}->{config['num_updates_per_round']} on pool {r}")
+                rng, _rng = jax.random.split(rng)
+                runner_state = run_round(r, runner_state, _rng, start_done=done0, on_chunk=_on_chunk)
+                jax.block_until_ready(runner_state.train_state.params)
+            assert int(runner_state.update_step) == r * config["num_updates_per_round"], (
+                int(runner_state.update_step), r, config["num_updates_per_round"])
+            if not (r == start_round and done0 >= config["num_updates_per_round"] and boundary_done):
+                _full_eval_and_log(r)
+                save_ckpt(r, config["num_updates_per_round"], runner_state, M, boundary_done=True, rng=rng)
 
         # Transfer summary from the boundary matrix.
         R = num_rounds
@@ -896,16 +944,30 @@ def main(config):
     periodic_pools = {r: jax.tree.map(lambda x: x[: config["eval_num_episodes_periodic"]], v) for r, v in full_pools.items()}
     video_pools = {r: jax.tree.map(lambda x: x[: config["eval_num_video_episodes"]], v) for r, v in full_pools.items()}
 
+    # Checkpoint/resume (for preemptible partitions): one directory per (group, run name, seed).
+    if not config.get("ckpt_dir"):
+        tag = (config.get("extra_run_name") or "run").strip("_") or "run"
+        config["ckpt_dir"] = str(REPO_ROOT / "checkpoints" / "rounds" / str(config["group"]) / f"{tag}_s{config['seed']}")
+    resume = None
+    latest = Path(config["ckpt_dir"]) / "latest.pkl"
+    if latest.exists() and not config.get("no_resume", False):
+        with latest.open("rb") as f:
+            resume = pickle.load(f)
+        logger.info(f"[RESUME] found checkpoint {latest}: round={resume['round']} done={resume['done_updates']} wandb={resume.get('wandb_run_id')}")
+
     if config["use_wandb"]:
         if jax.process_index() == 0:
-            init_wandb(config, name, settings=wandb.Settings(quiet=True))
+            kw = dict(settings=wandb.Settings(quiet=True))
+            if resume is not None and resume.get("wandb_run_id"):
+                kw |= dict(id=resume["wandb_run_id"], resume="allow")
+            init_wandb(config, name, **kw)
         else:
             os.environ["WANDB_MODE"] = "disabled"
 
     rng = jax.random.PRNGKey(config["seed"])
     rng, _rng = jax.random.split(rng)
     train = make_train(config, env_params, static_env_params, envs, full_pools, periodic_pools, video_pools)
-    train(_rng)
+    train(_rng, resume=resume)
 
 
 if __name__ == "__main__":

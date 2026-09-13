@@ -56,3 +56,7 @@ eval_num_video_episodes: 4
 video_freq_updates: 128
 
 seed: 0
+
+# --- Checkpoint/resume (preemptible partitions). null = checkpoints/rounds/<group>/<run>_s<seed>.
+ckpt_dir: null
+no_resume: false
