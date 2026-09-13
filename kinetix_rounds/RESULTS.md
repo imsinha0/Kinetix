@@ -44,3 +44,7 @@ Round 1 doubles as the learnability pilot for the distribution.
 | **simple512_n1 (one level)** | **1.000 @ 62M** (train 0.84) |
 The simple 2-leg / no-lava / 512-step variant is learnable per level (the default extra-leg + 256-step one was not: 0% at 40M), but generalising across 256 morphologies is slow (9% in 100M). Decision: run the 10-round sweep on this variant anyway (S_end(d_r) vs r is exactly what Figure 6 measures, high-n rounds will show slow accumulation), and pilot Kinetix's stock random 's' distribution (with the stock no-op filter) as a faster-learning alternative family.
 ### Batch loco-r10-v2 (17:45): simple512 variant, n ∈ {1, 256, 65536}, seed 0, 10 × 100M. Pilot rand-pilot: random 's' levels, no-op filtered, n=256, 1 × 100M.
+
+#### 2026-09-13 19:05 — round-1 progress, and the random pilot
+* loco2 (simple512): n=1 train success 0.90 @71M but greedy eval 0.00 (pilot with the same level reached greedy 1.0 @62M → run-to-run divergence; watching). n=256 / n=65536: eval 5–10% @50–70M, slow as expected.
+* **rand-pilot (stock random 's' levels, no-op filtered, n=256, 1 × 100M): eval 0.41 @8M → 0.61 @100M, train 0.59, 103k sps.** Learns fast and steadily → better substrate for the 10-round graph than locomotion.
