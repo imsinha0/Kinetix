@@ -76,3 +76,7 @@ seed: 0
 # --- Checkpoint/resume (preemptible partitions). null = checkpoints/rounds/<group>/<run>_s<seed>.
 ckpt_dir: null
 no_resume: false
+
+# --- Pool filtering: reject levels a do-nothing policy solves within learning.level_filter_n_steps (64) (Kinetix's no-op filter)
+filter_noop_levels: false
+level_filter_batch: 4096

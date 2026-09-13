@@ -48,7 +48,11 @@ from jax.sharding import PartitionSpec
 from omegaconf import OmegaConf
 
 from kinetix.data import get_valid_action_mask
+from jax2d.engine import PhysicsEngine
+
+from kinetix.environment.ued.distributions import sample_kinetix_level
 from kinetix.environment.ued.locomotion_distribution import DEFAULT_UED_PARAMS, sample_locomotion_level
+from kinetix.environment.ued.ued_state import UEDParams
 from kinetix.models import GeneralActorCriticRNN, make_network_from_config
 from kinetix.render import make_render_pixels
 from kinetix.util import (
@@ -168,30 +172,91 @@ def _locomotion_kwargs(config):
     return kw
 
 
-def make_pool_reset_fn(config, env_params, static_env_params, round_idx: int):
-    """Reset fn for round ``round_idx``: sample one of the pool's ``tasks_per_round`` levels."""
+def make_level_sampler(config, env_params, static_env_params):
+    """key -> EnvState for the configured task family.
+    * "locomotion": Kinetix's procedural walkers (sample_locomotion_level, see docstring).
+    * "random": Kinetix's stock random level generator (sample_kinetix_level) for the configured
+      env size — the distribution its paper's DR/SFL agents train on (heterogeneous difficulty)."""
+    fam = str(config.get("task_family", "locomotion"))
+    if fam == "locomotion":
+        kw = _locomotion_kwargs(config)
+        return lambda key: sample_locomotion_level(key, env_params, static_env_params, **kw)
+    if fam == "random":
+        engine = PhysicsEngine(static_env_params)
+        ued = UEDParams()
+        return lambda key: sample_kinetix_level(key, engine, env_params, static_env_params, ued)
+    raise ValueError(f"unknown task_family {fam!r}")
+
+
+def build_pool_index(config, env_params, static_env_params, env, round_idx: int):
+    """The pool's task indices (into task_key). With ``filter_noop_levels`` (Kinetix's stock
+    no-op filter), candidate indices whose level is solved by a do-nothing policy within
+    ``level_filter_n_steps`` steps are rejected, so pools contain only non-trivial levels.
+    Candidates are scanned in order i = 0, 1, 2, ... until ``tasks_per_round`` are accepted,
+    so the pool is a deterministic function of (task_seed, round)."""
     n = int(config["tasks_per_round"])
-    kw = _locomotion_kwargs(config)
+    if not config.get("filter_noop_levels", False):
+        return np.arange(n, dtype=np.int32)
+    sampler = make_level_sampler(config, env_params, static_env_params)
     task_key = make_task_key_fn(config["task_seed"], round_idx)
+    n_steps = int(config.get("level_filter_n_steps", 64))
+    batch = int(config.get("level_filter_batch", 4096))
+
+    @jax.jit
+    def _noop_solved(idx):
+        keys = jax.vmap(task_key)(idx)
+        levels = jax.vmap(sampler)(keys)
+        rng = jax.random.PRNGKey(0)
+        obs, states = jax.vmap(env.reset, in_axes=(0, None, 0))(jax.random.split(rng, idx.shape[0]), env_params, levels)
+        action = jnp.zeros((idx.shape[0], *env.action_space(env_params).shape), dtype=jnp.int32)
+
+        def _step(carry, rng):
+            states, solved, done_any = carry
+            _, states, reward, done, info = jax.vmap(env.step, in_axes=(0, 0, 0, None, 0))(
+                jax.random.split(rng, idx.shape[0]), states, action, env_params, levels
+            )
+            solved = solved | (info["GoalR"] & ~done_any)
+            done_any = done_any | done
+            return (states, solved, done_any), None
+
+        z = jnp.zeros((idx.shape[0],), dtype=bool)
+        (_, solved, _), _ = jax.lax.scan(_step, (states, z, z), jax.random.split(rng, n_steps))
+        return solved
+
+    accepted, start, scanned = [], 0, 0
+    while len(accepted) < n:
+        idx = np.arange(start, start + batch, dtype=np.int32)
+        solved = np.asarray(_noop_solved(jnp.asarray(idx)))
+        accepted.extend(idx[~solved].tolist())
+        start += batch
+        scanned += batch
+        assert scanned <= 64 * max(n, batch), "no-op filter rejected almost everything"
+    accepted = np.asarray(accepted[:n], dtype=np.int32)
+    logger.info(f"[POOL {round_idx}] no-op filter: scanned {scanned} candidates, accepted {n} ({n / scanned:.0%})")
+    return accepted
+
+
+def make_pool_reset_fn(config, env_params, static_env_params, round_idx: int, pool_index):
+    """Reset fn for round ``round_idx``: sample one of the pool's ``tasks_per_round`` levels."""
+    n = int(pool_index.shape[0])
+    sampler = make_level_sampler(config, env_params, static_env_params)
+    task_key = make_task_key_fn(config["task_seed"], round_idx)
+    pool_index = jnp.asarray(pool_index)
 
     def reset(rng):
         i = jax.random.randint(rng, (), 0, n)
-        return sample_locomotion_level(task_key(i), env_params, static_env_params, **kw)
+        return sampler(task_key(pool_index[i]))
 
     return reset
 
 
-def build_pool_levels(config, env_params, static_env_params, round_idx: int, num_episodes: int):
-    """Fixed eval levels for a pool: tasks 0..min(n, num_episodes)-1, cycled to num_episodes."""
-    n = int(config["tasks_per_round"])
-    kw = _locomotion_kwargs(config)
+def build_pool_levels(config, env_params, static_env_params, round_idx: int, num_episodes: int, pool_index):
+    """Fixed eval levels for a pool: tasks 0..min(n, num_episodes)-1 of the pool, cycled to num_episodes."""
+    n = int(pool_index.shape[0])
+    sampler = make_level_sampler(config, env_params, static_env_params)
     task_key = make_task_key_fn(config["task_seed"], round_idx)
-    idx = jnp.arange(num_episodes) % n
-
-    def _level(i):
-        return sample_locomotion_level(task_key(i), env_params, static_env_params, **kw)
-
-    return jax.vmap(_level)(idx)
+    idx = jnp.asarray(pool_index)[jnp.arange(num_episodes) % n]
+    return jax.vmap(lambda i: sampler(task_key(i)))(idx)
 
 
 def _num_levels(levels):
@@ -936,19 +1001,22 @@ def main(config):
     num_rounds = int(config["num_rounds"])
     config["diversity/tasks_per_round"] = int(config["tasks_per_round"])
     logger.info(
-        f"[POOLS] rounds={num_rounds} tasks_per_round={config['tasks_per_round']} "
+        f"[POOLS] family={config.get('task_family', 'locomotion')} rounds={num_rounds} tasks_per_round={config['tasks_per_round']} "
         f"steps_per_round={config['steps_per_round']} updates_per_round={config['num_updates_per_round']}"
     )
 
+    # Pool membership (optionally no-op filtered), using a throwaway env for the filter rollouts.
+    filter_env = make_env(config, static_env_params, env_params, None)
+    pool_index = {r: build_pool_index(config, env_params, static_env_params, filter_env, r) for r in range(1, num_rounds + 1)}
     envs = {
-        r: make_env(config, static_env_params, env_params, make_pool_reset_fn(config, env_params, static_env_params, r))
+        r: make_env(config, static_env_params, env_params, make_pool_reset_fn(config, env_params, static_env_params, r, pool_index[r]))
         for r in range(1, num_rounds + 1)
     }
 
     assert config["eval_num_episodes_periodic"] <= config["eval_num_episodes_full"]
     assert config["eval_num_video_episodes"] <= config["eval_num_episodes_full"]
     full_pools = {
-        r: build_pool_levels(config, env_params, static_env_params, r, config["eval_num_episodes_full"])
+        r: build_pool_levels(config, env_params, static_env_params, r, config["eval_num_episodes_full"], pool_index[r])
         for r in range(1, num_rounds + 1)
     }
     periodic_pools = {r: jax.tree.map(lambda x: x[: config["eval_num_episodes_periodic"]], v) for r, v in full_pools.items()}

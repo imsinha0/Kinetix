@@ -1,0 +1,49 @@
+# N-round protocol on Kinetix's stock RANDOM level distribution (sample_kinetix_level) at a
+# predefined env size (s/m/l). Same protocol/metrics as ppo_rounds.yaml.
+defaults:
+  - env: entity
+  - learning:
+    - ppo-base
+    - ppo-rnn
+  - misc: misc
+  - model:
+    - model-base
+    - model-transformer
+    - model-perm-invariant-mlp
+  - _self_
+
+env:
+  dense_reward_scale: 0.2
+
+misc:
+  wandb_project: kinetix-rounds
+  wandb_entity: imsinha-harvard-university
+  save_path: null
+  save_policy: false
+  video_frequency: 10
+
+task_family: random
+env_size_name: s
+env_size_type: predefined
+max_timesteps: null
+eval_levels: []
+
+num_rounds: 10
+steps_per_round: 100000000
+tasks_per_round: 256
+task_seed: 123
+
+eval_freq: 16
+eval_temperature: 0.0001
+eval_num_episodes_periodic: 64
+eval_num_episodes_full: 256
+eval_num_video_episodes: 4
+video_freq_updates: 128
+
+ckpt_dir: null
+no_resume: false
+seed: 0
+
+# --- Pool filtering: reject levels a do-nothing policy solves within learning.level_filter_n_steps (64) (Kinetix's no-op filter)
+filter_noop_levels: true
+level_filter_batch: 4096
