@@ -48,7 +48,7 @@ from jax.sharding import PartitionSpec
 from omegaconf import OmegaConf
 
 from kinetix.data import get_valid_action_mask
-from kinetix.environment.ued.locomotion_distribution import sample_locomotion_level
+from kinetix.environment.ued.locomotion_distribution import DEFAULT_UED_PARAMS, sample_locomotion_level
 from kinetix.models import GeneralActorCriticRNN, make_network_from_config
 from kinetix.render import make_render_pixels
 from kinetix.util import (
@@ -158,10 +158,20 @@ def make_task_key_fn(task_seed: int, round_idx: int):
     return task_key
 
 
+def _locomotion_kwargs(config):
+    """kwargs for sample_locomotion_level. The special key ``ued`` (dict) overrides fields of
+    the locomotion UEDParams, e.g. {floor_prob_red: 0.0, floor_prob_normal: 1.0} for no lava floors."""
+    kw = dict(config.get("locomotion_kwargs") or {})
+    ued = kw.pop("ued", None)
+    if ued:
+        kw["ued_params"] = DEFAULT_UED_PARAMS.replace(**{k: float(v) for k, v in dict(ued).items()})
+    return kw
+
+
 def make_pool_reset_fn(config, env_params, static_env_params, round_idx: int):
     """Reset fn for round ``round_idx``: sample one of the pool's ``tasks_per_round`` levels."""
     n = int(config["tasks_per_round"])
-    kw = dict(config.get("locomotion_kwargs") or {})
+    kw = _locomotion_kwargs(config)
     task_key = make_task_key_fn(config["task_seed"], round_idx)
 
     def reset(rng):
@@ -174,7 +184,7 @@ def make_pool_reset_fn(config, env_params, static_env_params, round_idx: int):
 def build_pool_levels(config, env_params, static_env_params, round_idx: int, num_episodes: int):
     """Fixed eval levels for a pool: tasks 0..min(n, num_episodes)-1, cycled to num_episodes."""
     n = int(config["tasks_per_round"])
-    kw = dict(config.get("locomotion_kwargs") or {})
+    kw = _locomotion_kwargs(config)
     task_key = make_task_key_fn(config["task_seed"], round_idx)
     idx = jnp.arange(num_episodes) % n
 
