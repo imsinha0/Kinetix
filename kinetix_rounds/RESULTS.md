@@ -48,3 +48,6 @@ The simple 2-leg / no-lava / 512-step variant is learnable per level (the defaul
 #### 2026-09-13 19:05 — round-1 progress, and the random pilot
 * loco2 (simple512): n=1 train success 0.90 @71M but greedy eval 0.00 (pilot with the same level reached greedy 1.0 @62M → run-to-run divergence; watching). n=256 / n=65536: eval 5–10% @50–70M, slow as expected.
 * **rand-pilot (stock random 's' levels, no-op filtered, n=256, 1 × 100M): eval 0.41 @8M → 0.61 @100M, train 0.59, 103k sps.** Learns fast and steadily → better substrate for the 10-round graph than locomotion.
+* Greedy eval (temperature 1e-4) is degenerate for n=1 pools: 256 identical deterministic rollouts → success flips 0/1 between checkpoints while train success is 0.9. Switched both configs to stock Kinetix sampled-policy eval (temperature 1.0). Cancelled loco-r10-v2 (75M into round 1) and restarted.
+### Batch loco-r10-v3 (19:15): simple512 locomotion, n ∈ {1, 256, 65536}, seed 0, 10 × 100M, sampled eval.
+### Batch rand-r10-v1 (19:15): stock random 's' levels (no-op filtered), n ∈ {1, 256, 65536}, seed 0, 10 × 100M, sampled eval. Untrained baseline on filtered pools ≈ 0.145; pilot reached 0.61 after 100M.
