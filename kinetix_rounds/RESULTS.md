@@ -70,3 +70,12 @@ Untrained baseline on filtered pools ≈ 0.145.
 * n=256: fast within-round learning to ≈0.6 each round; every boundary drops to the held-out level (Δ_r ≈ +0.34 at all 9 boundaries) and each pool is forgotten to ≈0.25 afterwards (B ≈ −0.34). No accumulation across rounds.
 * n=65536: lower per-round mastery (0.34 → 0.42, slowly rising), but **Δ_r ≈ 0 at every boundary and B ≈ 0**: no forward gap and no forgetting — the "systematic transfer" regime, at the cost of slower optimisation (the paper's plateau).
 Seeds 1–2 running (finish ≈03:30). loco3_n1 (single-level locomotion) still running.
+
+## RESULT — rand-r10-v1 COMPLETE, 3 seeds (2026-09-14 04:00) — `outputs/rounds/rand-r10-v1/`, W&B "Figure 6 — random small levels, 3 seeds"
+| n per round | mean S_end(d_r) (3 seeds) | mean Δ_r | mean B(10,j) |
+|---|---|---|---|
+| 1 | 0.63 / 0.73 / 0.73 | +0.50 / +0.56 / +0.63 | −0.39 / −0.54 / −0.48 |
+| 256 | 0.61 / 0.63 / 0.61 | +0.34 / +0.36 / +0.35 | −0.34 / −0.34 / −0.34 |
+| 65536 | 0.38 / 0.41 / 0.39 | −0.00 / +0.02 / +0.01 | +0.00 / +0.01 / +0.01 |
+Seeds agree to within ±0.03 at n=256 and n=65536. Mean S_end by round (3 seeds): n=256 flat at 0.60–0.67 (0.53 at round 10); n=65536 rises 0.36 → 0.43 by round 8 then dips (0.35 at round 10). Untrained baseline 0.145.
+Interpretation: on Kinetix's random-level substrate, diversity trades per-round mastery for transfer in both directions — low/medium diversity (n ≤ 256) re-learns each pool quickly but shows a full forward gap at every boundary and forgets every previous pool; maximal diversity (n = 65536, a fresh level almost every episode) shows zero forward gap and zero forgetting but optimises slowly (paper: "too much diversity inhibits continued optimisation"). Locomotion (loco-r10-v3) was learnable only at n=1 within 100M/round.
