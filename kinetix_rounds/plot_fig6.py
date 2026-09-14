@@ -23,7 +23,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
 ENTITY, PROJECT = "imsinha-harvard-university", "kinetix-rounds"
-PRELIM = "PRELIMINARY — Kinetix locomotion substrate, few seeds. Pattern only. Not for publication."
+PRELIM = "PRELIMINARY — Kinetix substrate, few seeds. Pattern only. Not for publication."
 
 
 def fetch(group, include_running=False):
@@ -89,7 +89,7 @@ def main():
         x = np.arange(1, R + 1)
         ax.plot(x, m, "o-", color=color[n], label=label[n])
         ax.fill_between(x, lo, hi, color=color[n], alpha=0.15)
-    ax.set_xlabel("round r (each a disjoint pool of n locomotion levels)")
+    ax.set_xlabel("round r (each round = a disjoint pool of n levels)")
     ax.set_ylabel("S_end(d_r): success on pool r after training on it")
     ax.set_xticks(range(1, R + 1))
     ax.set_ylim(0, 1.02)
@@ -134,7 +134,7 @@ def main():
         ax.grid(alpha=0.3)
     axes[0].set_ylabel("success rate")
     axes[0].legend(fontsize=8)
-    fig.suptitle(f"Kinetix locomotion, {R} rounds [{args.group}]\n{PRELIM}", fontsize=9)
+    fig.suptitle(f"Kinetix, {R} rounds of 100M steps on disjoint task pools [{args.group}]\n{PRELIM}", fontsize=9)
     fig.tight_layout()
     p2 = outdir / "fig6_success_vs_steps.png"
     fig.savefig(p2, dpi=150)
