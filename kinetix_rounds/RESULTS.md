@@ -58,3 +58,15 @@ The simple 2-leg / no-lava / 512-step variant is learnable per level (the defaul
 * n=256: S_end(d1)=0.70, S_end(d2)=0.61; held-out pools 0.2–0.3 (untrained 0.145); pool 1 drops to 0.39 during round 2 (forgetting).
 * n=65536: S_end(d1)=0.41 (lower per-round mastery), but **all** held-out pools rise together (0.3 → 0.45–0.50 by round 2) — the paper's transfer signature.
 **loco-r10-v3**: n=1 failed round 1 (0%, the pilot had learned this level at 62M — stochastic), learned round 2's level (1.0) with transfer to pool 8 (0.88); n=256 / n=65536 stuck at 8–14% after 100M. Cancelled the two diverse locomotion runs (hopeless at 100M/round), kept loco3_n1. Queued rand seeds 1, 2 (6 jobs) for a 3-seed random-family Figure 6.
+
+#### 2026-09-14 01:30 — rand-r10-v1 seed 0 COMPLETE (Figure 6 on Kinetix random 's' levels) — `outputs/rounds/rand-r10-v1/`
+| n | S_end(d_r) by round | mean S_end | mean Δ_r | mean B(10,j) |
+|---|---|---|---|---|
+| 1 | 1, 1, 0, 0, 0, 1, 0.31, 0.97, 1, 1 | 0.63 | +0.50 | −0.39 |
+| 256 | 0.61, 0.60, 0.69, 0.61, 0.58, 0.64, 0.65, 0.64, 0.61, 0.54 | 0.61 | +0.34 | −0.34 |
+| 65536 | 0.34, 0.37, 0.35, 0.39, 0.39, 0.33, 0.40, 0.42, 0.41, 0.37 | 0.38 | −0.00 | +0.00 |
+Untrained baseline on filtered pools ≈ 0.145.
+* n=1: all-or-nothing per level (3 of 10 single levels never solved in 100M), Δ≈1 whenever solved, B(10,j) strongly negative (each level forgotten as soon as the next round starts; pool 1 re-solved only when a later level happens to be similar).
+* n=256: fast within-round learning to ≈0.6 each round; every boundary drops to the held-out level (Δ_r ≈ +0.34 at all 9 boundaries) and each pool is forgotten to ≈0.25 afterwards (B ≈ −0.34). No accumulation across rounds.
+* n=65536: lower per-round mastery (0.34 → 0.42, slowly rising), but **Δ_r ≈ 0 at every boundary and B ≈ 0**: no forward gap and no forgetting — the "systematic transfer" regime, at the cost of slower optimisation (the paper's plateau).
+Seeds 1–2 running (finish ≈03:30). loco3_n1 (single-level locomotion) still running.
