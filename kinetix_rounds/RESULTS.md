@@ -51,3 +51,10 @@ The simple 2-leg / no-lava / 512-step variant is learnable per level (the defaul
 * Greedy eval (temperature 1e-4) is degenerate for n=1 pools: 256 identical deterministic rollouts → success flips 0/1 between checkpoints while train success is 0.9. Switched both configs to stock Kinetix sampled-policy eval (temperature 1.0). Cancelled loco-r10-v2 (75M into round 1) and restarted.
 ### Batch loco-r10-v3 (19:15): simple512 locomotion, n ∈ {1, 256, 65536}, seed 0, 10 × 100M, sampled eval.
 ### Batch rand-r10-v1 (19:15): stock random 's' levels (no-op filtered), n ∈ {1, 256, 65536}, seed 0, 10 × 100M, sampled eval. Untrained baseline on filtered pools ≈ 0.145; pilot reached 0.61 after 100M.
+
+#### 2026-09-13 22:15 — after the first boundaries
+**rand-r10-v1 (random 's', seed 0)**
+* n=1: masters each round's single level (current pool 1.0) and forgets it at the next round (pool 1: 1.0 → 0.0 after round 2). Held-out pools ≈ 0 except one easy level (pool 6 ≈ 0.5). Round-5 level unsolved at 60M into the round.
+* n=256: S_end(d1)=0.70, S_end(d2)=0.61; held-out pools 0.2–0.3 (untrained 0.145); pool 1 drops to 0.39 during round 2 (forgetting).
+* n=65536: S_end(d1)=0.41 (lower per-round mastery), but **all** held-out pools rise together (0.3 → 0.45–0.50 by round 2) — the paper's transfer signature.
+**loco-r10-v3**: n=1 failed round 1 (0%, the pilot had learned this level at 62M — stochastic), learned round 2's level (1.0) with transfer to pool 8 (0.88); n=256 / n=65536 stuck at 8–14% after 100M. Cancelled the two diverse locomotion runs (hopeless at 100M/round), kept loco3_n1. Queued rand seeds 1, 2 (6 jobs) for a 3-seed random-family Figure 6.
