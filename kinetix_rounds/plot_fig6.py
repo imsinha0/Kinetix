@@ -202,7 +202,7 @@ def main():
         print(f"n={n}: S_end by round = {np.round(m, 3).tolist()}")
     if args.no_wandb:
         return
-    run = wandb.init(entity=ENTITY, project=PROJECT, group=args.group, name=f"Figure 6 — locomotion rounds ({args.group})", job_type="analysis", notes=PRELIM)
+    run = wandb.init(entity=ENTITY, project=PROJECT, group=args.group, name=f"Figure 6 — Kinetix rounds ({args.group})", job_type="analysis", notes=PRELIM)
     run.log({f"figures/{p.stem}": wandb.Image(str(p)) for p in (p1, p2, p3, p4)})
     art = wandb.Artifact("fig6_data", type="analysis")
     for p in (p1, p2, p3, p4, csv_path):
