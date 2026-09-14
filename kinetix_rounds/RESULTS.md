@@ -79,3 +79,6 @@ Seeds 1–2 running (finish ≈03:30). loco3_n1 (single-level locomotion) still 
 | 65536 | 0.38 / 0.41 / 0.39 | −0.00 / +0.02 / +0.01 | +0.00 / +0.01 / +0.01 |
 Seeds agree to within ±0.03 at n=256 and n=65536. Mean S_end by round (3 seeds): n=256 flat at 0.60–0.67 (0.53 at round 10); n=65536 rises 0.36 → 0.43 by round 8 then dips (0.35 at round 10). Untrained baseline 0.145.
 Interpretation: on Kinetix's random-level substrate, diversity trades per-round mastery for transfer in both directions — low/medium diversity (n ≤ 256) re-learns each pool quickly but shows a full forward gap at every boundary and forgets every previous pool; maximal diversity (n = 65536, a fresh level almost every episode) shows zero forward gap and zero forgetting but optimises slowly (paper: "too much diversity inhibits continued optimisation"). Locomotion (loco-r10-v3) was learnable only at n=1 within 100M/round.
+
+#### loco-r10-v3 n=1 (single-level locomotion, 10 rounds) — finished 2026-09-14
+S_end by round = [0.0, 1.0, 1.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0] (mean 0.70); mean Δ_r = +0.67; mean B(10,j) = -0.63. One seed; single walker levels are solved or not within 100M and mostly forgotten afterwards. Plots: `outputs/rounds/loco-r10-v3/`.
