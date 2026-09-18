@@ -82,3 +82,24 @@ Interpretation: on Kinetix's random-level substrate, diversity trades per-round 
 
 #### loco-r10-v3 n=1 (single-level locomotion, 10 rounds) — finished 2026-09-14
 S_end by round = [0.0, 1.0, 1.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0] (mean 0.70); mean Δ_r = +0.67; mean B(10,j) = -0.63. One seed; single walker levels are solved or not within 100M and mostly forgotten afterwards. Plots: `outputs/rounds/loco-r10-v3/`.
+
+## Correction (2026-09-17): task-seed bug in rand-r10-v1 / loco-r10-v3
+
+**Bug**: `make_task_key_fn` was keyed only on `task_seed` (fixed at 123 in every config).
+Every "seed" (s0/s1/s2) in `rand-r10-v1` therefore trained on and evaluated the
+**identical** 10 task pools — only network init / PPO rollout stochasticity differed
+across seeds, not the tasks themselves. The `rand-r10-v1` and `loco-r10-v3` results
+above are NOT a task-set seed sweep and should be read as single-task-set replicates,
+not independent samples of the diversity axis.
+
+**Fix** (commit 624c468): `make_task_key_fn` now folds in `config["seed"]` as well as
+`task_seed`, so a different seed gives a genuinely different sample of tasks per round
+by default (matching how Banyan's d1/d2 banks are freshly resampled per seed).
+`task_seed` remains available to pin the task set while varying only training seed.
+
+## Batch rand-r10-v2 (submitted 2026-09-17) — corrected seeding, n in {1, 16, 64, 256, 65536}
+
+Same protocol as rand-r10-v1 (task_family=random, env size s, no-op level filter,
+10 rounds x 100M steps, sampled-policy eval), now with per-seed task pools, and two
+new diversity points requested (4^2=16, 8^2=64) to fill in the 1 -> 256 gap.
+15 jobs: n x seed for n in {1,16,64,256,65536}, seed in {0,1,2}.
