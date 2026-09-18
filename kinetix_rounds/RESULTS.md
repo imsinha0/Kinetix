@@ -103,3 +103,28 @@ Same protocol as rand-r10-v1 (task_family=random, env size s, no-op level filter
 10 rounds x 100M steps, sampled-policy eval), now with per-seed task pools, and two
 new diversity points requested (4^2=16, 8^2=64) to fill in the 1 -> 256 gap.
 15 jobs: n x seed for n in {1,16,64,256,65536}, seed in {0,1,2}.
+
+## RESULT — rand-r10-v2 COMPLETE, corrected seeding, 3 seeds, n in {1,16,64,256,65536} (2026-09-18)
+`outputs/rounds/rand-r10-v2/`, W&B "Figure 6 (corrected seeding) — random levels, n=1/16/64/256/65536, 3 seeds each"
+https://wandb.ai/imsinha-harvard-university/kinetix-rounds/runs/e5z1zg90
+
+| n per round | mean S_end(d_r) (3 seeds) | mean Delta_r | mean B(10,j) |
+|---|---|---|---|
+| 1      | 0.678 (sd 0.092) | +0.377 (sd 0.023) | -0.412 (sd 0.099) |
+| 16     | 0.664 (sd 0.052) | +0.436 (sd 0.051) | -0.440 (sd 0.052) |
+| 64     | 0.655 (sd 0.031) | +0.411 (sd 0.013) | -0.378 (sd 0.020) |
+| 256    | 0.593 (sd 0.014) | +0.333 (sd 0.010) | -0.318 (sd 0.006) |
+| 65536  | 0.392 (sd 0.009) | +0.009 (sd 0.007) | -0.002 (sd 0.005) |
+
+With real per-seed task pools, the picture is now monotonic and much tighter across seeds
+(sd shrinks from >0.09 at n=1 down to <0.01 at n=256/65536, as it should for independent
+samples of a diversity axis). Delta_r and |B(10,j)| decrease smoothly from n=16 -> 256 ->
+65536, both essentially hitting zero at maximal diversity (65536 = 256^2, ~ a fresh level
+every episode): systematic transfer with no forward gap and no forgetting, at the cost of
+lower per-round mastery (S_end plateaus around 0.39 instead of rising, i.e. "too much
+diversity inhibits continued optimisation", the paper's other headline result). n=1 remains
+noisy (all-or-nothing per single level; 3 seeds is few for a fixed-or-not outcome) but its
+mean Delta/B now sit in line with n=16/64 rather than being an outlier as under the buggy
+shared-task-set version.
+
+This supersedes rand-r10-v1 (see "Correction" note above) as the definitive Figure 6.
