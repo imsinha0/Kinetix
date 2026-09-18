@@ -151,9 +151,19 @@ def get_train_state_from_config(config, rng: jax.Array, env, env_params):
 # ----------------------------------------------------------------------------------
 # Task pools
 # ----------------------------------------------------------------------------------
-def make_task_key_fn(task_seed: int, round_idx: int):
-    """key(round, i): the PRNG key that fully specifies task i of the round's pool."""
-    base = jax.random.PRNGKey(int(task_seed))
+def make_task_key_fn(task_seed: int, seed: int, round_idx: int):
+    """key(round, i): the PRNG key that fully specifies task i of the round's pool.
+
+    Folds in BOTH ``task_seed`` (an explicit knob for e.g. holding the task set fixed
+    while varying only network/training randomness) and ``seed`` (the run's training
+    seed). Folding in ``seed`` by default means "different seed" -> a genuinely
+    different sample of tasks per round, not just different network init/PPO
+    stochasticity on an identical task set -- this is what a seed sweep over a task
+    distribution should do (cf. how d1/d2 banks are freshly sampled per seed in the
+    Banyan protocol). Pass the same ``task_seed`` and vary only ``seed`` to get
+    different-tasks-per-seed (the default); pin both to exactly reproduce one run's
+    task pools regardless of training seed."""
+    base = jax.random.fold_in(jax.random.PRNGKey(int(task_seed)), int(seed))
     round_key = jax.random.fold_in(base, int(round_idx))
 
     def task_key(i):
@@ -193,12 +203,12 @@ def build_pool_index(config, env_params, static_env_params, env, round_idx: int)
     no-op filter), candidate indices whose level is solved by a do-nothing policy within
     ``level_filter_n_steps`` steps are rejected, so pools contain only non-trivial levels.
     Candidates are scanned in order i = 0, 1, 2, ... until ``tasks_per_round`` are accepted,
-    so the pool is a deterministic function of (task_seed, round)."""
+    so the pool is a deterministic function of (task_seed, seed, round)."""
     n = int(config["tasks_per_round"])
     if not config.get("filter_noop_levels", False):
         return np.arange(n, dtype=np.int32)
     sampler = make_level_sampler(config, env_params, static_env_params)
-    task_key = make_task_key_fn(config["task_seed"], round_idx)
+    task_key = make_task_key_fn(config["task_seed"], config["seed"], round_idx)
     n_steps = int(config.get("level_filter_n_steps", 64))
     batch = int(config.get("level_filter_batch", 4096))
 
@@ -240,7 +250,7 @@ def make_pool_reset_fn(config, env_params, static_env_params, round_idx: int, po
     """Reset fn for round ``round_idx``: sample one of the pool's ``tasks_per_round`` levels."""
     n = int(pool_index.shape[0])
     sampler = make_level_sampler(config, env_params, static_env_params)
-    task_key = make_task_key_fn(config["task_seed"], round_idx)
+    task_key = make_task_key_fn(config["task_seed"], config["seed"], round_idx)
     pool_index = jnp.asarray(pool_index)
 
     def reset(rng):
@@ -254,7 +264,7 @@ def build_pool_levels(config, env_params, static_env_params, round_idx: int, num
     """Fixed eval levels for a pool: tasks 0..min(n, num_episodes)-1 of the pool, cycled to num_episodes."""
     n = int(pool_index.shape[0])
     sampler = make_level_sampler(config, env_params, static_env_params)
-    task_key = make_task_key_fn(config["task_seed"], round_idx)
+    task_key = make_task_key_fn(config["task_seed"], config["seed"], round_idx)
     idx = jnp.asarray(pool_index)[jnp.arange(num_episodes) % n]
     return jax.vmap(lambda i: sampler(task_key(i)))(idx)
 
